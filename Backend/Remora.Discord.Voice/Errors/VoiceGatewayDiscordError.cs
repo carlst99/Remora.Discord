@@ -1,5 +1,5 @@
 ﻿//
-//  VoiceServerUnavailableError.cs
+//  VoiceGatewayDiscordError.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -21,14 +21,15 @@
 //
 
 using JetBrains.Annotations;
+using Remora.Discord.Voice.Abstractions.Objects;
 using Remora.Results;
 
 namespace Remora.Discord.Voice.Errors
 {
     /// <summary>
-    /// Represents a failure to connect, or maintain a connection to a voice server due to a loss in availability.
+    /// Represents an unexpected closing of a voice gateway by Discord.
     /// </summary>
     [PublicAPI]
-    public record VoiceServerUnavailableError()
-        : ResultError("Voice connection severed due to endpoint server de-allocation.");
+    public record VoiceGatewayDiscordError(VoiceGatewayCloseStatus CloseStatus)
+        : ResultError($"The gateway closed with Discord close status \"{CloseStatus}\".");
 }

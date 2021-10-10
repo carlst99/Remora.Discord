@@ -1,5 +1,5 @@
 ﻿//
-//  VoiceServerUnavailableError.cs
+//  VoiceGatewayWebSocketError.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -20,15 +20,16 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+using System.Net.WebSockets;
 using JetBrains.Annotations;
 using Remora.Results;
 
 namespace Remora.Discord.Voice.Errors
 {
     /// <summary>
-    /// Represents a failure to connect, or maintain a connection to a voice server due to a loss in availability.
+    /// Represents an unexpected closing of a voice gateway on the websocket layer.
     /// </summary>
     [PublicAPI]
-    public record VoiceServerUnavailableError()
-        : ResultError("Voice connection severed due to endpoint server de-allocation.");
+    public record VoiceGatewayWebSocketError(WebSocketCloseStatus CloseStatus)
+        : ResultError($"The gateway closed with WebSocket close status \"{CloseStatus}\".");
 }

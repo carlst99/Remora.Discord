@@ -27,7 +27,7 @@ using Remora.Discord.Core;
 using Remora.Discord.Voice.Objects;
 using Remora.Results;
 
-namespace Remora.Discord.Voice.Services.Abstractions
+namespace Remora.Discord.Voice.Abstractions.Services
 {
     /// <summary>
     /// Defines an intermediary between requesting a voice connection and the gateway confirming it.

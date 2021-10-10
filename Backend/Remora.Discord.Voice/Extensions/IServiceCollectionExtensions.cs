@@ -24,9 +24,9 @@ using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Remora.Discord.Gateway.Extensions;
+using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Responders;
 using Remora.Discord.Voice.Services;
-using Remora.Discord.Voice.Services.Abstractions;
 
 namespace Remora.Discord.Voice.Extensions
 {
@@ -47,6 +47,8 @@ namespace Remora.Discord.Voice.Extensions
         /// <returns>The service collection, with the services added.</returns>
         public static IServiceCollection AddDiscordVoice(this IServiceCollection serviceCollection)
         {
+            serviceCollection.TryAddTransient<IVoicePayloadTransportService, WebSocketVoicePayloadTransportService>();
+
             serviceCollection.TryAddSingleton<IConnectionEstablishmentWaiterService, ConnectionEstablishmentWaiterService>();
             serviceCollection.TryAddSingleton<DiscordVoiceClientFactory>();
 

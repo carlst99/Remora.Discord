@@ -1,5 +1,5 @@
 ﻿//
-//  VoiceServerUnavailableError.cs
+//  IVoicePayloadOfT.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -21,14 +21,26 @@
 //
 
 using JetBrains.Annotations;
-using Remora.Results;
 
-namespace Remora.Discord.Voice.Errors
+#pragma warning disable SA1649
+
+namespace Remora.Discord.Voice.Abstractions.Objects
 {
     /// <summary>
-    /// Represents a failure to connect, or maintain a connection to a voice server due to a loss in availability.
+    /// Marker interface for payload classes.
     /// </summary>
+    /// <typeparam name="TData">The data contained in the payload.</typeparam>
     [PublicAPI]
-    public record VoiceServerUnavailableError()
-        : ResultError("Voice connection severed due to endpoint server de-allocation.");
+    public interface IVoicePayload<out TData> : IVoicePayload
+    {
+        /// <summary>
+        /// Gets the operation code of the payload.
+        /// </summary>
+        VoiceOperationCode OperationCode { get; }
+
+        /// <summary>
+        /// Gets the data contained in the payload.
+        /// </summary>
+        TData Data { get; }
+    }
 }

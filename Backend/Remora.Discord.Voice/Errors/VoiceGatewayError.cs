@@ -20,6 +20,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+using JetBrains.Annotations;
 using Remora.Discord.Gateway.Results;
 
 namespace Remora.Discord.Voice.Errors
@@ -29,5 +30,7 @@ namespace Remora.Discord.Voice.Errors
     /// </summary>
     /// <param name="Message">The error message.</param>
     /// <param name="IsCritical">Indicates if the error is critical.</param>
-    public record VoiceGatewayError(string Message, bool IsCritical) : GatewayError(Message, IsCritical);
+    [PublicAPI]
+    public record VoiceGatewayError(string Message, bool IsCritical)
+        : GatewayError(Message, IsCritical);
 }

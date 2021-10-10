@@ -29,5 +29,6 @@ namespace Remora.Discord.Voice.Errors
     /// Represents a failure to request a new voice connection, as a request already pending for the given guild.
     /// </summary>
     [PublicAPI]
-    public record VoiceRequestTimeoutError() : ResultError("A valid response to the voice connection request was not receieved in time.");
+    public record VoiceRequestTimeoutError()
+        : ResultError("A valid response to the voice connection request was not receieved in time.");
 }

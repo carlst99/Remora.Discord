@@ -1,5 +1,5 @@
 ﻿//
-//  VoiceServerUnavailableError.cs
+//  VoiceIdentify.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -21,14 +21,24 @@
 //
 
 using JetBrains.Annotations;
-using Remora.Results;
+using Remora.Discord.Core;
+using Remora.Discord.Voice.Abstractions.Objects.Commands;
 
-namespace Remora.Discord.Voice.Errors
+namespace Remora.Discord.Voice.Objects.Commands
 {
     /// <summary>
-    /// Represents a failure to connect, or maintain a connection to a voice server due to a loss in availability.
+    /// <inheritdoc cref="IVoiceIdentify"/>
     /// </summary>
+    /// <param name="ServerID"><inheritdoc cref="IVoiceIdentify.ServerID"/></param>
+    /// <param name="UserID"><inheritdoc cref="IVoiceIdentify.UserID"/></param>
+    /// <param name="SessionID"><inheritdoc cref="IVoiceIdentify.SessionID"/></param>
+    /// <param name="Token"><inheritdoc cref="IVoiceIdentify.Token"/></param>
     [PublicAPI]
-    public record VoiceServerUnavailableError()
-        : ResultError("Voice connection severed due to endpoint server de-allocation.");
+    public record VoiceIdentify
+    (
+        Snowflake ServerID,
+        Snowflake UserID,
+        string SessionID,
+        string Token
+    ) : IVoiceIdentify;
 }

@@ -24,15 +24,18 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using JetBrains.Annotations;
+using Remora.Discord.API.Abstractions.Gateway.Commands;
 using Remora.Discord.API.Abstractions.Gateway.Events;
 using Remora.Discord.API.Gateway.Commands;
 using Remora.Discord.Core;
 using Remora.Discord.Gateway;
 using Remora.Discord.Gateway.Results;
-using Remora.Discord.Gateway.Transport;
+using Remora.Discord.Voice.Abstractions.Objects;
+using Remora.Discord.Voice.Abstractions.Objects.Commands;
+using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Errors;
 using Remora.Discord.Voice.Objects;
-using Remora.Discord.Voice.Services.Abstractions;
+using Remora.Discord.Voice.Objects.Commands;
 using Remora.Results;
 
 namespace Remora.Discord.Voice
@@ -45,7 +48,7 @@ namespace Remora.Discord.Voice
     {
         private readonly DiscordGatewayClient _gatewayClient;
         private readonly IConnectionEstablishmentWaiterService _connectionWaiterService;
-        private readonly IPayloadTransportService _transportService;
+        private readonly IVoicePayloadTransportService _transportService;
 
         private GatewayConnectionStatus _connectionStatus;
 
@@ -54,12 +57,12 @@ namespace Remora.Discord.Voice
         /// </summary>
         /// <param name="gatewayClient">The gateway client.</param>
         /// <param name="connectionWaiterService">The connection waiter service.</param>
-        /// <param name="transportService">The payload transport service.</param>
+        /// <param name="transportService">The voice payload transport service.</param>
         public DiscordVoiceClient
         (
             DiscordGatewayClient gatewayClient,
             IConnectionEstablishmentWaiterService connectionWaiterService,
-            IPayloadTransportService transportService
+            IVoicePayloadTransportService transportService
         )
         {
             _gatewayClient = gatewayClient;
@@ -112,7 +115,9 @@ namespace Remora.Discord.Voice
                     return Result.FromError(getConnectionDetails);
                 }
 
+                IVoiceStateUpdate voiceState = getConnectionDetails.Entity.VoiceState;
                 IVoiceServerUpdate voiceServer = getConnectionDetails.Entity.VoiceServer;
+
                 if (voiceServer.Endpoint is null)
                 {
                     return new VoiceServerUnavailableError();
@@ -132,6 +137,22 @@ namespace Remora.Discord.Voice
                 if (!connectResult.IsSuccess)
                 {
                     return connectResult;
+                }
+
+                Result identifyResult = await SendCommand
+                (
+                    new VoiceIdentify
+                    (
+                        voiceServer.GuildID,
+                        voiceState.UserID,
+                        voiceState.SessionID,
+                        voiceServer.Token
+                    )
+                );
+
+                if (!identifyResult.IsSuccess)
+                {
+                    return identifyResult;
                 }
             }
             catch (TaskCanceledException)
@@ -167,6 +188,50 @@ namespace Remora.Discord.Voice
                     false
                 )
             );
+        }
+
+        /// <summary>
+        /// Sends a voice gateway command to over the transport service.
+        /// </summary>
+        /// <typeparam name="TCommand">The type of the command to send.</typeparam>
+        /// <param name="command">The command object.</param>
+        /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
+        /// <returns>A result representing the outcome of the operation.</returns>
+        protected async Task<Result> SendCommand<TCommand>(TCommand command, CancellationToken ct = default) where TCommand : IGatewayCommand
+        {
+            Result<VoiceOperationCode> getOpCode = GetVoiceCommandOperationCode<TCommand>();
+            if (!getOpCode.IsSuccess)
+            {
+                return Result.FromError(getOpCode);
+            }
+
+            VoicePayload<TCommand> payload = new(getOpCode.Entity, command);
+            return await _transportService.SendPayloadAsync(payload, ct);
+        }
+
+        /// <summary>
+        /// Gets the matching operation code of a voice payload data object.
+        /// </summary>
+        /// <typeparam name="TCommand">The type of the payload data.</typeparam>
+        /// <returns>A result containing the operation code, or otherwise an error if a relevant operation code could not found.</returns>
+        protected Result<VoiceOperationCode> GetVoiceCommandOperationCode<TCommand>() where TCommand : IGatewayCommand
+        {
+            Type objectType = typeof(TCommand);
+
+            if (objectType.IsGenericType)
+            {
+                return new NotSupportedError("Unable to determine operation code.");
+            }
+
+            return objectType switch
+            {
+                // Commands
+                _ when typeof(IVoiceIdentify).IsAssignableFrom(objectType)
+                => VoiceOperationCode.Identify,
+
+                // Other
+                _ => new NotSupportedError("Unknown operation code.")
+            };
         }
     }
 }

@@ -27,7 +27,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Remora.Discord.Core;
 using Remora.Discord.Gateway;
 using Remora.Discord.Gateway.Transport;
-using Remora.Discord.Voice.Services.Abstractions;
+using Remora.Discord.Voice.Abstractions.Services;
 
 namespace Remora.Discord.Voice
 {

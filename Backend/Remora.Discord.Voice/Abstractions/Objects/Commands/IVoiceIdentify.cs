@@ -1,5 +1,5 @@
 ﻿//
-//  VoiceServerUnavailableError.cs
+//  IVoiceIdentify.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -21,14 +21,35 @@
 //
 
 using JetBrains.Annotations;
-using Remora.Results;
+using Remora.Discord.API.Abstractions.Gateway.Commands;
+using Remora.Discord.Core;
 
-namespace Remora.Discord.Voice.Errors
+namespace Remora.Discord.Voice.Abstractions.Objects.Commands
 {
     /// <summary>
-    /// Represents a failure to connect, or maintain a connection to a voice server due to a loss in availability.
+    /// Represents a request to identify with the voice gateway.
     /// </summary>
     [PublicAPI]
-    public record VoiceServerUnavailableError()
-        : ResultError("Voice connection severed due to endpoint server de-allocation.");
+    public interface IVoiceIdentify : IGatewayCommand
+    {
+        /// <summary>
+        /// Gets the ID of the guild to identify with.
+        /// </summary>
+        Snowflake ServerID { get; }
+
+        /// <summary>
+        /// Gets the ID of the user that's trying to identify themselves.
+        /// </summary>
+        Snowflake UserID { get; }
+
+        /// <summary>
+        /// Gets the voice session ID to initialize.
+        /// </summary>
+        string SessionID { get; }
+
+        /// <summary>
+        /// Gets the authentication token of the identifying user.
+        /// </summary>
+        string Token { get; }
+    }
 }

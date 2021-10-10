@@ -29,9 +29,9 @@ using Remora.Discord.API.Abstractions.Gateway.Events;
 using Remora.Discord.API.Abstractions.Objects;
 using Remora.Discord.API.Abstractions.Rest;
 using Remora.Discord.Core;
+using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Errors;
 using Remora.Discord.Voice.Objects;
-using Remora.Discord.Voice.Services.Abstractions;
 using Remora.Results;
 
 namespace Remora.Discord.Voice.Services

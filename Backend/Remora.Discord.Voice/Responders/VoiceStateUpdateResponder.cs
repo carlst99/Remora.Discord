@@ -25,7 +25,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Remora.Discord.API.Abstractions.Gateway.Events;
 using Remora.Discord.Gateway.Responders;
-using Remora.Discord.Voice.Services.Abstractions;
+using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Results;
 
 namespace Remora.Discord.Voice.Responders

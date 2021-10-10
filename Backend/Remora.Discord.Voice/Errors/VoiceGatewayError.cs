@@ -1,5 +1,5 @@
 ﻿//
-//  VoiceRequestTimeoutError.cs
+//  VoiceGatewayError.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -20,14 +20,14 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
-using JetBrains.Annotations;
-using Remora.Results;
+using Remora.Discord.Gateway.Results;
 
 namespace Remora.Discord.Voice.Errors
 {
     /// <summary>
-    /// Represents a failure to request a new voice connection, as a request already pending for the given guild.
+    /// Represents a clientside voice gateway error.
     /// </summary>
-    [PublicAPI]
-    public record VoiceRequestTimeoutError() : ResultError("A valid response to the voice connection request was not receieved in time.");
+    /// <param name="Message">The error message.</param>
+    /// <param name="IsCritical">Indicates if the error is critical.</param>
+    public record VoiceGatewayError(string Message, bool IsCritical) : GatewayError(Message, IsCritical);
 }

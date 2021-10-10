@@ -103,7 +103,7 @@ namespace Remora.Discord.Voice.Services
         {
             if (_pendingRequests.Contains(guildID))
             {
-                return new PendingVoiceRequestError(guildID);
+                return new InvalidOperationError("A connection request is already pending for this guild.");
             }
 
             _pendingRequests.Add(guildID);

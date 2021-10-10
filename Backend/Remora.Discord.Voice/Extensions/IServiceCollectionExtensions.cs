@@ -39,6 +39,10 @@ namespace Remora.Discord.Voice.Extensions
         /// <summary>
         /// Adds services required by the Discord Gateway system.
         /// </summary>
+        /// <remarks>
+        /// This method expects that the gateway services have been registered - see
+        /// <see cref="ServiceCollectionExtensions.AddDiscordGateway(IServiceCollection, System.Func{System.IServiceProvider, string})"/>.
+        /// </remarks>
         /// <param name="serviceCollection">The service collection.</param>
         /// <returns>The service collection, with the services added.</returns>
         public static IServiceCollection AddDiscordVoice(this IServiceCollection serviceCollection)

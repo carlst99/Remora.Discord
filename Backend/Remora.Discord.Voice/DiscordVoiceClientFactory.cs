@@ -26,6 +26,7 @@ using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
 using Remora.Discord.Core;
 using Remora.Discord.Gateway;
+using Remora.Discord.Gateway.Transport;
 using Remora.Discord.Voice.Services.Abstractions;
 
 namespace Remora.Discord.Voice
@@ -64,7 +65,8 @@ namespace Remora.Discord.Voice
             var voiceClient = new DiscordVoiceClient
             (
                 _services.GetRequiredService<DiscordGatewayClient>(),
-                _services.GetRequiredService<IConnectionEstablishmentWaiterService>()
+                _services.GetRequiredService<IConnectionEstablishmentWaiterService>(),
+                _services.GetRequiredService<IPayloadTransportService>()
             );
 
             _guildClients.Add(guildID, voiceClient);

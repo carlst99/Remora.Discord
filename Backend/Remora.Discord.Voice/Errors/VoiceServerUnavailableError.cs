@@ -1,5 +1,5 @@
 ﻿//
-//  PendingVoiceRequestError.cs
+//  VoiceServerUnavailableError.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -20,29 +20,14 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
-using Remora.Discord.Core;
+using JetBrains.Annotations;
 using Remora.Results;
 
 namespace Remora.Discord.Voice.Errors
 {
     /// <summary>
-    /// Represents a failure to request a new voice connection, as a request already pending for the given guild.
+    /// Represents a failure to connect, or maintain a connection to a voice server due to a loss in availability.
     /// </summary>
-    public record PendingVoiceRequestError : ResultError
-    {
-        /// <summary>
-        /// Gets the ID of the guild for which a pending voice connection request exists.
-        /// </summary>
-        public Snowflake GuildID { get; init; }
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="PendingVoiceRequestError"/> class.
-        /// </summary>
-        /// <param name="guildID">The ID of the guild for which a pending voice connection request exists.</param>
-        public PendingVoiceRequestError(Snowflake guildID)
-            : base("A connection request is already pending for this guild.")
-        {
-            GuildID = guildID;
-        }
-    }
+    [PublicAPI]
+    public record VoiceServerUnavailableError() : ResultError("Voice connection severed due to endpoint server de-allocation.");
 }

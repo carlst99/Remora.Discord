@@ -24,9 +24,13 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using JetBrains.Annotations;
+using Remora.Discord.API.Abstractions.Gateway.Events;
 using Remora.Discord.API.Gateway.Commands;
 using Remora.Discord.Core;
 using Remora.Discord.Gateway;
+using Remora.Discord.Gateway.Results;
+using Remora.Discord.Gateway.Transport;
+using Remora.Discord.Voice.Errors;
 using Remora.Discord.Voice.Objects;
 using Remora.Discord.Voice.Services.Abstractions;
 using Remora.Results;
@@ -41,20 +45,28 @@ namespace Remora.Discord.Voice
     {
         private readonly DiscordGatewayClient _gatewayClient;
         private readonly IConnectionEstablishmentWaiterService _connectionWaiterService;
+        private readonly IPayloadTransportService _transportService;
+
+        private GatewayConnectionStatus _connectionStatus;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="DiscordVoiceClient"/> class.
         /// </summary>
         /// <param name="gatewayClient">The gateway client.</param>
         /// <param name="connectionWaiterService">The connection waiter service.</param>
+        /// <param name="transportService">The payload transport service.</param>
         public DiscordVoiceClient
         (
             DiscordGatewayClient gatewayClient,
-            IConnectionEstablishmentWaiterService connectionWaiterService
+            IConnectionEstablishmentWaiterService connectionWaiterService,
+            IPayloadTransportService transportService
         )
         {
             _gatewayClient = gatewayClient;
             _connectionWaiterService = connectionWaiterService;
+            _transportService = transportService;
+
+            _connectionStatus = GatewayConnectionStatus.Offline;
         }
 
         /// <summary>
@@ -77,6 +89,11 @@ namespace Remora.Discord.Voice
         {
             try
             {
+                if (_connectionStatus != GatewayConnectionStatus.Offline)
+                {
+                    return new InvalidOperationError("Already connected.");
+                }
+
                 _gatewayClient.SubmitCommand
                 (
                     new UpdateVoiceState
@@ -93,6 +110,28 @@ namespace Remora.Discord.Voice
                 {
                     SendDisconnectVoiceStateUpdate(guildID);
                     return Result.FromError(getConnectionDetails);
+                }
+
+                IVoiceServerUpdate voiceServer = getConnectionDetails.Entity.VoiceServer;
+                if (voiceServer.Endpoint is null)
+                {
+                    return new VoiceServerUnavailableError();
+                }
+
+                string endpoint = $"wss://{voiceServer.Endpoint}?v=4";
+                if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var gatewayUri))
+                {
+                    return new GatewayError
+                    (
+                        "Failed to parse the received voice gateway endpoint.",
+                        true
+                    );
+                }
+
+                Result connectResult = await _transportService.ConnectAsync(gatewayUri, ct);
+                if (!connectResult.IsSuccess)
+                {
+                    return connectResult;
                 }
             }
             catch (TaskCanceledException)

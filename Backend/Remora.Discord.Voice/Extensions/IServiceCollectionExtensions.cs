@@ -44,7 +44,7 @@ namespace Remora.Discord.Voice.Extensions
         public static IServiceCollection AddDiscordVoice(this IServiceCollection serviceCollection)
         {
             serviceCollection.TryAddSingleton<IConnectionEstablishmentWaiterService, ConnectionEstablishmentWaiterService>();
-            serviceCollection.TryAddTransient<DiscordVoiceClient>();
+            serviceCollection.TryAddSingleton<DiscordVoiceClientFactory>();
 
             serviceCollection.AddResponder<VoiceStateUpdateResponder>();
             serviceCollection.AddResponder<VoiceServerUpdateResponder>();

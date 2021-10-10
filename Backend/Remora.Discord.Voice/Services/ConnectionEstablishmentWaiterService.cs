@@ -73,25 +73,29 @@ namespace Remora.Discord.Voice.Services
         }
 
         /// <inheritdoc />
-        public async Task SubmitVoiceStateUpdate(IVoiceStateUpdate voiceStateUpdate, CancellationToken ct = default)
+        public async Task<Result> SubmitVoiceStateUpdate(IVoiceStateUpdate voiceStateUpdate, CancellationToken ct = default)
         {
             if (!voiceStateUpdate.GuildID.IsDefined() || !_pendingRequests.Contains(voiceStateUpdate.GuildID.Value))
             {
-                return;
+                // This is fine - the state update wasn't in response to a voice connection request.
+                return Result.FromSuccess();
             }
 
             Result<IUser> getCurrentUser = await _userAPI.GetCurrentUserAsync(ct);
-            if (getCurrentUser.IsDefined())
+            if (!getCurrentUser.IsDefined())
             {
-                return;
+                return Result.FromError(getCurrentUser);
             }
 
             if (getCurrentUser.Entity.ID != voiceStateUpdate.UserID)
             {
-                return;
+                // This is fine - the state update wasn't in response to a voice connection request.
+                return Result.FromSuccess();
             }
 
             _stateUpdates.TryAdd(voiceStateUpdate.GuildID.Value, voiceStateUpdate);
+
+            return Result.FromSuccess();
         }
 
         /// <inheritdoc />
@@ -119,12 +123,12 @@ namespace Remora.Discord.Voice.Services
                     continue;
                 }
 
-                if (!_stateUpdates.TryRemove(guildID, out IVoiceStateUpdate stateUpdate))
+                if (!_stateUpdates.TryRemove(guildID, out IVoiceStateUpdate? stateUpdate))
                 {
                     return new KeyNotFoundException("Internal state was unexpectedly modified.");
                 }
 
-                if (!_serverUpdates.TryRemove(guildID, out IVoiceServerUpdate serverUpdate))
+                if (!_serverUpdates.TryRemove(guildID, out IVoiceServerUpdate? serverUpdate))
                 {
                     return new KeyNotFoundException("Internal state was unexpectedly modified.");
                 }

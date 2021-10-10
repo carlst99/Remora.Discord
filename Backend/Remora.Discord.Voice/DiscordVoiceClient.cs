@@ -91,6 +91,7 @@ namespace Remora.Discord.Voice
                 Result<VoiceConnectionEstablishmentDetails> getConnectionDetails = await _connectionWaiterService.WaitForRequestConfirmation(guildID, ct);
                 if (!getConnectionDetails.IsDefined())
                 {
+                    SendDisconnectVoiceStateUpdate(guildID);
                     return Result.FromError(getConnectionDetails);
                 }
             }
@@ -107,7 +108,26 @@ namespace Remora.Discord.Voice
                 return ex;
             }
 
+            SendDisconnectVoiceStateUpdate(guildID);
+
             return Result.FromSuccess();
+        }
+
+        /// <summary>
+        /// Sends an <see cref="UpdateVoiceState"/> command to the gateway, requesting that the bot be disconnected from a guild's voice channel.
+        /// </summary>
+        /// <param name="guildID">The guild containing the voice channel to disconnect from.</param>
+        protected void SendDisconnectVoiceStateUpdate(Snowflake guildID)
+        {
+            _gatewayClient.SubmitCommand
+            (
+                new UpdateVoiceState
+                (
+                    guildID,
+                    false,
+                    false
+                )
+            );
         }
     }
 }

@@ -54,8 +54,7 @@ namespace Remora.Discord.Voice.Responders
         /// <returns>The result of the operation.</returns>
         public async Task<Result> RespondAsync(IVoiceStateUpdate gatewayEvent, CancellationToken ct = default)
         {
-            await _connectionService.SubmitVoiceStateUpdate(gatewayEvent, ct);
-            return Result.FromSuccess();
+            return await _connectionService.SubmitVoiceStateUpdate(gatewayEvent, ct);
         }
     }
 }

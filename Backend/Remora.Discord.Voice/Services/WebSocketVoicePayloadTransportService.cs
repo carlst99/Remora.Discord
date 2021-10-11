@@ -113,7 +113,7 @@ namespace Remora.Discord.Voice.Services
         }
 
         /// <inheritdoc />
-        public async Task<Result> SendPayloadAsync(IVoicePayload payload, CancellationToken ct = default)
+        public async Task<Result> SendPayloadAsync<TPayload>(TPayload payload, CancellationToken ct = default) where TPayload : IVoicePayload
         {
             if (_clientWebSocket is null)
             {

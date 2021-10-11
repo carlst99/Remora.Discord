@@ -1,5 +1,5 @@
 ﻿//
-//  IVoiceIdentify.cs
+//  IVoiceGatewayCommand.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -21,35 +21,14 @@
 //
 
 using JetBrains.Annotations;
-using Remora.Discord.API.Abstractions.Gateway.Commands;
-using Remora.Discord.Core;
 
 namespace Remora.Discord.Voice.Abstractions.Objects.Commands
 {
     /// <summary>
-    /// Represents a request to identify with the voice gateway.
+    /// Acts as a marker interface for voice gateway commands.
     /// </summary>
     [PublicAPI]
-    public interface IVoiceIdentify : IGatewayCommand
+    public interface IVoiceGatewayCommand : IVoiceGatewayPayloadData
     {
-        /// <summary>
-        /// Gets the ID of the guild to identify with.
-        /// </summary>
-        Snowflake ServerID { get; }
-
-        /// <summary>
-        /// Gets the ID of the user that's trying to identify themselves.
-        /// </summary>
-        Snowflake UserID { get; }
-
-        /// <summary>
-        /// Gets the voice session ID to initialize.
-        /// </summary>
-        string SessionID { get; }
-
-        /// <summary>
-        /// Gets the authentication token of the identifying user.
-        /// </summary>
-        string Token { get; }
     }
 }

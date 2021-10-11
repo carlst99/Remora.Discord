@@ -24,18 +24,18 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using JetBrains.Annotations;
-using Remora.Discord.API.Abstractions.Gateway.Commands;
-using Remora.Discord.API.Abstractions.Gateway.Events;
 using Remora.Discord.API.Gateway.Commands;
 using Remora.Discord.Core;
 using Remora.Discord.Gateway;
 using Remora.Discord.Gateway.Results;
 using Remora.Discord.Voice.Abstractions.Objects;
 using Remora.Discord.Voice.Abstractions.Objects.Commands;
+using Remora.Discord.Voice.Abstractions.Objects.Commands.ConnectingResuming;
+using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Errors;
 using Remora.Discord.Voice.Objects;
-using Remora.Discord.Voice.Objects.Commands;
+using Remora.Discord.Voice.Objects.Commands.ConnectingResuming;
 using Remora.Results;
 
 namespace Remora.Discord.Voice
@@ -111,21 +111,25 @@ namespace Remora.Discord.Voice
                 Result<VoiceConnectionEstablishmentDetails> getConnectionDetails = await _connectionWaiterService.WaitForRequestConfirmation(guildID, ct);
                 if (!getConnectionDetails.IsDefined())
                 {
-                    SendDisconnectVoiceStateUpdate(guildID);
+                    SendDisconnectVoiceStateUpdate(guildID); // TODO: We've got too many of these calls on return.
+                    // Have a result return field, and a custom exception to break into a specific catch which disconnects and returns the result?
                     return Result.FromError(getConnectionDetails);
                 }
 
-                IVoiceStateUpdate voiceState = getConnectionDetails.Entity.VoiceState;
-                IVoiceServerUpdate voiceServer = getConnectionDetails.Entity.VoiceServer;
+                // Using the full namespace here to help avoid potential confusion between the normal and voice gateway event sets.
+                API.Abstractions.Gateway.Events.IVoiceStateUpdate voiceState = getConnectionDetails.Entity.VoiceState;
+                API.Abstractions.Gateway.Events.IVoiceServerUpdate voiceServer = getConnectionDetails.Entity.VoiceServer;
 
                 if (voiceServer.Endpoint is null)
                 {
+                    SendDisconnectVoiceStateUpdate(guildID);
                     return new VoiceServerUnavailableError();
                 }
 
                 string endpoint = $"wss://{voiceServer.Endpoint}?v=4";
                 if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var gatewayUri))
                 {
+                    SendDisconnectVoiceStateUpdate(guildID);
                     return new GatewayError
                     (
                         "Failed to parse the received voice gateway endpoint.",
@@ -136,6 +140,7 @@ namespace Remora.Discord.Voice
                 Result connectResult = await _transportService.ConnectAsync(gatewayUri, ct);
                 if (!connectResult.IsSuccess)
                 {
+                    SendDisconnectVoiceStateUpdate(guildID);
                     return connectResult;
                 }
 
@@ -152,7 +157,25 @@ namespace Remora.Discord.Voice
 
                 if (!identifyResult.IsSuccess)
                 {
+                    SendDisconnectVoiceStateUpdate(guildID);
                     return identifyResult;
+                }
+
+                Result<IVoicePayload> readyPayload = await _transportService.ReceivePayloadAsync(ct);
+                if (!readyPayload.IsDefined())
+                {
+                    SendDisconnectVoiceStateUpdate(guildID);
+                    return Result.FromError
+                    (
+                        new VoiceGatewayError("Failed to receive voice ready payload", true),
+                        readyPayload
+                    );
+                }
+
+                if (readyPayload.Entity is not IVoicePayload<IVoiceReady> hello)
+                {
+                    SendDisconnectVoiceStateUpdate(guildID);
+                    return new GatewayError("The first payload from the gateway was not a ready message.", true);
                 }
             }
             catch (TaskCanceledException)
@@ -197,9 +220,9 @@ namespace Remora.Discord.Voice
         /// <param name="command">The command object.</param>
         /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
         /// <returns>A result representing the outcome of the operation.</returns>
-        protected async Task<Result> SendCommand<TCommand>(TCommand command, CancellationToken ct = default) where TCommand : IGatewayCommand
+        protected async Task<Result> SendCommand<TCommand>(TCommand command, CancellationToken ct = default) where TCommand : IVoiceGatewayCommand
         {
-            Result<VoiceOperationCode> getOpCode = GetVoiceCommandOperationCode<TCommand>();
+            Result<VoiceOperationCode> getOpCode = GetPayloadOperationCode<TCommand>();
             if (!getOpCode.IsSuccess)
             {
                 return Result.FromError(getOpCode);
@@ -212,11 +235,11 @@ namespace Remora.Discord.Voice
         /// <summary>
         /// Gets the matching operation code of a voice payload data object.
         /// </summary>
-        /// <typeparam name="TCommand">The type of the payload data.</typeparam>
+        /// <typeparam name="TPayloadData">The type of the payload data.</typeparam>
         /// <returns>A result containing the operation code, or otherwise an error if a relevant operation code could not found.</returns>
-        protected Result<VoiceOperationCode> GetVoiceCommandOperationCode<TCommand>() where TCommand : IGatewayCommand
+        protected Result<VoiceOperationCode> GetPayloadOperationCode<TPayloadData>() where TPayloadData : IVoiceGatewayPayloadData
         {
-            Type objectType = typeof(TCommand);
+            Type objectType = typeof(TPayloadData);
 
             if (objectType.IsGenericType)
             {
@@ -228,6 +251,10 @@ namespace Remora.Discord.Voice
                 // Commands
                 _ when typeof(IVoiceIdentify).IsAssignableFrom(objectType)
                 => VoiceOperationCode.Identify,
+
+                // Events
+                _ when typeof(IVoiceReady).IsAssignableFrom(objectType)
+                => VoiceOperationCode.Ready,
 
                 // Other
                 _ => new NotSupportedError("Unknown operation code.")

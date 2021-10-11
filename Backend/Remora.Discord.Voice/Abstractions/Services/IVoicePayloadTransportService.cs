@@ -65,10 +65,11 @@ namespace Remora.Discord.Voice.Abstractions.Services
         /// <remarks>
         /// This method should be thread-safe in conjunction with <see cref="ReceivePayloadAsync"/>.
         /// </remarks>
+        /// <typeparam name="TPayload">The type of the payload.</typeparam>
         /// <param name="payload">The payload.</param>
         /// <param name="ct">The cancellation token for this operation.</param>
         /// <returns>A send result which may or may not have succeeded.</returns>
-        Task<Result> SendPayloadAsync(IVoicePayload payload, CancellationToken ct = default);
+        Task<Result> SendPayloadAsync<TPayload>(TPayload payload, CancellationToken ct = default) where TPayload : IVoicePayload;
 
         /// <summary>
         /// Asynchronously receives a payload.

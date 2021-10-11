@@ -22,17 +22,11 @@
 
 using JetBrains.Annotations;
 using Remora.Discord.Core;
-using Remora.Discord.Voice.Abstractions.Objects.Commands;
+using Remora.Discord.Voice.Abstractions.Objects.Commands.ConnectingResuming;
 
-namespace Remora.Discord.Voice.Objects.Commands
+namespace Remora.Discord.Voice.Objects.Commands.ConnectingResuming
 {
-    /// <summary>
     /// <inheritdoc cref="IVoiceIdentify"/>
-    /// </summary>
-    /// <param name="ServerID"><inheritdoc cref="IVoiceIdentify.ServerID"/></param>
-    /// <param name="UserID"><inheritdoc cref="IVoiceIdentify.UserID"/></param>
-    /// <param name="SessionID"><inheritdoc cref="IVoiceIdentify.SessionID"/></param>
-    /// <param name="Token"><inheritdoc cref="IVoiceIdentify.Token"/></param>
     [PublicAPI]
     public record VoiceIdentify
     (

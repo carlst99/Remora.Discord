@@ -23,10 +23,15 @@
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Remora.Discord.API.Extensions;
 using Remora.Discord.Gateway.Extensions;
+using Remora.Discord.Voice.Abstractions.Objects.Commands.ConnectingResuming;
+using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Services;
+using Remora.Discord.Voice.Objects.Commands.ConnectingResuming;
 using Remora.Discord.Voice.Responders;
 using Remora.Discord.Voice.Services;
+using System.Text.Json;
 
 namespace Remora.Discord.Voice.Extensions
 {
@@ -55,7 +60,86 @@ namespace Remora.Discord.Voice.Extensions
             serviceCollection.AddResponder<VoiceStateUpdateResponder>();
             serviceCollection.AddResponder<VoiceServerUpdateResponder>();
 
+            serviceCollection
+                .Configure<JsonSerializerOptions>
+                (
+                    options =>
+                    {
+                        //options.Converters.Add(new PayloadConverter(allowUnknownEvents));
+
+                        options
+                            .AddVoiceGatewayBidirectionalConverters()
+                            .AddVoiceGatewayCommandConverters()
+                            .AddVoiceGatewayEventConverters();
+
+                        //options.AddDataObjectConverter<IUnknownEvent, UnknownEvent>();
+                    }
+                );
+
             return serviceCollection;
+        }
+
+        /// <summary>
+        /// Adds the JSON converters that handle bidirectional gateway payloads.
+        /// </summary>
+        /// <param name="options">The serializer options.</param>
+        /// <returns>The options, with the converters added.</returns>
+        private static JsonSerializerOptions AddVoiceGatewayBidirectionalConverters(this JsonSerializerOptions options)
+        {
+            //options
+            //    .AddConverter<HeartbeatConverter>()
+            //    .AddDataObjectConverter<IHeartbeatAcknowledge, HeartbeatAcknowledge>();
+
+            return options;
+        }
+
+        /// <summary>
+        /// Adds the JSON converters that handle gateway command payloads.
+        /// </summary>
+        /// <param name="options">The serializer options.</param>
+        /// <returns>The options, with the converters added.</returns>
+        private static JsonSerializerOptions AddVoiceGatewayCommandConverters(this JsonSerializerOptions options)
+        {
+            options.AddDataObjectConverter<IVoiceIdentify, VoiceIdentify>();
+
+            //options.AddDataObjectConverter<IUpdatePresence, UpdatePresence>()
+            //    .WithPropertyName(u => u.IsAFK, "afk")
+            //    .WithPropertyConverter
+            //    (
+            //        u => u.Status,
+            //        new StringEnumConverter<ClientStatus>(new SnakeCaseNamingPolicy())
+            //    )
+            //    .WithPropertyConverter(u => u.Since, new UnixMillisecondsDateTimeOffsetConverter());
+
+            return options;
+        }
+
+        /// <summary>
+        /// Adds the JSON converters that handle gateway event payloads.
+        /// </summary>
+        /// <param name="options">The serializer options.</param>
+        /// <returns>The options, with the converters added.</returns>
+        private static JsonSerializerOptions AddVoiceGatewayEventConverters(this JsonSerializerOptions options)
+        {
+            // Connecting and resuming
+            //options.AddDataObjectConverter<IHello, Hello>()
+            //    .WithPropertyConverter(h => h.HeartbeatInterval, new UnitTimeSpanConverter(TimeUnit.Milliseconds));
+
+            options.AddDataObjectConverter<IVoiceReady, VoiceReady>()
+                .WithPropertyName(r => r.Version, "v");
+
+            //options.AddDataObjectConverter<IReconnect, Reconnect>();
+            //options.AddDataObjectConverter<IResumed, Resumed>();
+
+            //// Channels
+            //options.AddDataObjectConverter<IChannelCreate, ChannelCreate>()
+            //    .WithPropertyName(c => c.IsNsfw, "nsfw")
+            //    .WithPropertyConverter(c => c.RateLimitPerUser, new UnitTimeSpanConverter(TimeUnit.Seconds));
+
+            //// Other
+            //options.AddDataObjectConverter<IUnknownEvent, UnknownEvent>();
+
+            return options;
         }
     }
 }

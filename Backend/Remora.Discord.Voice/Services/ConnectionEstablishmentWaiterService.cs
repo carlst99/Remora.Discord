@@ -81,7 +81,7 @@ namespace Remora.Discord.Voice.Services
                 return Result.FromSuccess();
             }
 
-            Result<IUser> getCurrentUser = await _userAPI.GetCurrentUserAsync(ct);
+            Result<IUser> getCurrentUser = await _userAPI.GetCurrentUserAsync(ct).ConfigureAwait(false);
             if (!getCurrentUser.IsDefined())
             {
                 return Result.FromError(getCurrentUser);
@@ -116,7 +116,7 @@ namespace Remora.Discord.Voice.Services
                     return new VoiceRequestTimeoutError();
                 }
 
-                await Task.Delay(100, ct);
+                await Task.Delay(100, ct).ConfigureAwait(false);
 
                 if (!_stateUpdates.ContainsKey(guildID) || !_serverUpdates.ContainsKey(guildID))
                 {

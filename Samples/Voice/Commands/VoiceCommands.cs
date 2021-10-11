@@ -76,14 +76,12 @@ namespace Remora.Discord.Samples.Caching.Commands
 
             Result connectResult = await voiceClient.RunAsync(_context.GuildID.Value, connectTo.ID, false, false, CancellationToken);
 
-            if (connectResult.IsSuccess)
-            {
-                return await _feedbackService.SendContextualSuccessAsync("Connected!", ct: CancellationToken);
-            }
-            else
+            if (!connectResult.IsSuccess)
             {
                 return await _feedbackService.SendContextualErrorAsync(connectResult.Error.ToString()!, ct: CancellationToken);
             }
+
+            return await _feedbackService.SendContextualSuccessAsync("Connected!", ct: CancellationToken);
         }
     }
 }

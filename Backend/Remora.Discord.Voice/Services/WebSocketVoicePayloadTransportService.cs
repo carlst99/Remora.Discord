@@ -24,6 +24,7 @@ using System;
 using System.Buffers;
 using System.IO;
 using System.Net.WebSockets;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -81,7 +82,7 @@ namespace Remora.Discord.Voice.Services
 
             try
             {
-                await socket.ConnectAsync(endpoint, ct);
+                await socket.ConnectAsync(endpoint, ct).ConfigureAwait(false);
                 switch (socket.State)
                 {
                     case WebSocketState.Open:
@@ -130,7 +131,7 @@ namespace Remora.Discord.Voice.Services
             byte[]? buffer = null;
             try
             {
-                await JsonSerializer.SerializeAsync(memoryStream, payload, _jsonOptions, ct);
+                await JsonSerializer.SerializeAsync(memoryStream, payload, _jsonOptions, ct).ConfigureAwait(false);
 
                 if (memoryStream.Length > 4096)
                 {
@@ -144,11 +145,11 @@ namespace Remora.Discord.Voice.Services
                 memoryStream.Seek(0, SeekOrigin.Begin);
 
                 // Copy the data
-                var bufferSegment = new ArraySegment<byte>(buffer, 0, (int)memoryStream.Length);
-                await memoryStream.ReadAsync(bufferSegment, ct);
+                Memory<byte> bufferSegment = buffer.AsMemory(0, (int)memoryStream.Length);
+                await memoryStream.ReadAsync(bufferSegment, ct).ConfigureAwait(false);
 
                 // Send the whole payload as one chunk
-                await _clientWebSocket.SendAsync(bufferSegment, WebSocketMessageType.Text, true, ct);
+                await _clientWebSocket.SendAsync(bufferSegment, WebSocketMessageType.Text, true, ct).ConfigureAwait(false);
 
                 if (_clientWebSocket.CloseStatus.HasValue)
                 {
@@ -186,33 +187,40 @@ namespace Remora.Discord.Voice.Services
 
             await using var memoryStream = new MemoryStream(); // TODO: Recyclable memory stream
 
-            var buffer = ArrayPool<byte>.Shared.Rent(4096);
+            IMemoryOwner<byte> buffer = MemoryPool<byte>.Shared.Rent(4096);
 
             try
             {
-                WebSocketReceiveResult result;
+                ValueWebSocketReceiveResult result;
 
                 do
                 {
-                    result = await _clientWebSocket.ReceiveAsync(buffer, ct);
+                    result = await _clientWebSocket.ReceiveAsync(buffer.Memory, ct).ConfigureAwait(false);
 
-                    if (result.CloseStatus.HasValue)
+                    if (result.MessageType is WebSocketMessageType.Close)
                     {
-                        if (Enum.IsDefined(typeof(VoiceGatewayCloseStatus), (int)result.CloseStatus))
+                        if (Enum.IsDefined(typeof(VoiceGatewayCloseStatus), (int)_clientWebSocket.CloseStatus!.Value))
                         {
-                            return new VoiceGatewayDiscordError((VoiceGatewayCloseStatus)result.CloseStatus);
+                            return new VoiceGatewayDiscordError((VoiceGatewayCloseStatus)_clientWebSocket.CloseStatus.Value);
                         }
 
-                        return new VoiceGatewayWebSocketError(result.CloseStatus.Value);
+                        return new VoiceGatewayWebSocketError(_clientWebSocket.CloseStatus.Value);
                     }
 
-                    await memoryStream.WriteAsync(buffer, 0, result.Count, ct);
+                    await memoryStream.WriteAsync(buffer.Memory.Slice(0, result.Count), ct).ConfigureAwait(false);
                 }
                 while (!result.EndOfMessage);
 
                 memoryStream.Seek(0, SeekOrigin.Begin);
 
-                var payload = await JsonSerializer.DeserializeAsync<IVoicePayload>(memoryStream, _jsonOptions, ct);
+                using (StreamReader sr = new(memoryStream, Encoding.UTF8, true, -1, true))
+                {
+                    string jsonValue = sr.ReadToEnd();
+                    Console.WriteLine(jsonValue);
+                    memoryStream.Seek(0, SeekOrigin.Begin);
+                }
+
+                var payload = await JsonSerializer.DeserializeAsync<IVoicePayload>(memoryStream, _jsonOptions, ct).ConfigureAwait(false);
                 if (payload is null)
                 {
                     return new NotSupportedError
@@ -223,9 +231,9 @@ namespace Remora.Discord.Voice.Services
 
                 return Result<IVoicePayload>.FromSuccess(payload);
             }
-            finally
+            catch (Exception ex)
             {
-                ArrayPool<byte>.Shared.Return(buffer);
+                return ex;
             }
         }
 
@@ -261,7 +269,7 @@ namespace Remora.Discord.Voice.Services
                                 closeCode,
                                 "Terminating connection by user request.",
                                 ct
-                            );
+                            ).ConfigureAwait(false);
                         }
                         catch (WebSocketException)
                         {
@@ -286,12 +294,14 @@ namespace Remora.Discord.Voice.Services
         /// <inheritdoc />
         public async ValueTask DisposeAsync()
         {
+            GC.SuppressFinalize(this);
+
             if (_clientWebSocket is null)
             {
                 return;
             }
 
-            await DisconnectAsync(false);
+            await DisconnectAsync(false).ConfigureAwait(false);
         }
     }
 }

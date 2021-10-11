@@ -20,6 +20,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+using System.Text.Json;
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -46,7 +47,6 @@ using Remora.Discord.Voice.Objects.Events.Heartbeats;
 using Remora.Discord.Voice.Objects.Events.Sessions;
 using Remora.Discord.Voice.Responders;
 using Remora.Discord.Voice.Services;
-using System.Text.Json;
 
 namespace Remora.Discord.Voice.Extensions
 {
@@ -61,7 +61,7 @@ namespace Remora.Discord.Voice.Extensions
         /// </summary>
         /// <remarks>
         /// This method expects that the gateway services have been registered - see
-        /// <see cref="ServiceCollectionExtensions.AddDiscordGateway(IServiceCollection, System.Func{System.IServiceProvider, string})"/>.
+        /// <see cref="Gateway.Extensions.ServiceCollectionExtensions.AddDiscordGateway(IServiceCollection, System.Func{System.IServiceProvider, string})"/>.
         /// </remarks>
         /// <param name="serviceCollection">The service collection.</param>
         /// <returns>The service collection, with the services added.</returns>
@@ -134,6 +134,7 @@ namespace Remora.Discord.Voice.Extensions
         {
             // ConnectingResuming
             options.AddDataObjectConverter<IVoiceHello, VoiceHello>()
+                .WithPropertyName(v => v.Version, "v")
                 .WithPropertyConverter(v => v.HeartbeatInterval, new UnitTimeSpanConverter(TimeUnit.Milliseconds));
 
             options.AddDataObjectConverter<IVoiceReady, VoiceReady>();

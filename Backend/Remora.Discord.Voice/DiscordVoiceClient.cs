@@ -222,43 +222,8 @@ namespace Remora.Discord.Voice
         /// <returns>A result representing the outcome of the operation.</returns>
         protected async Task<Result> SendCommand<TCommand>(TCommand command, CancellationToken ct = default) where TCommand : IVoiceGatewayCommand
         {
-            Result<VoiceOperationCode> getOpCode = GetPayloadOperationCode<TCommand>();
-            if (!getOpCode.IsSuccess)
-            {
-                return Result.FromError(getOpCode);
-            }
-
-            VoicePayload<TCommand> payload = new(getOpCode.Entity, command);
+            VoicePayload<TCommand> payload = new(command);
             return await _transportService.SendPayloadAsync(payload, ct);
-        }
-
-        /// <summary>
-        /// Gets the matching operation code of a voice payload data object.
-        /// </summary>
-        /// <typeparam name="TPayloadData">The type of the payload data.</typeparam>
-        /// <returns>A result containing the operation code, or otherwise an error if a relevant operation code could not found.</returns>
-        protected Result<VoiceOperationCode> GetPayloadOperationCode<TPayloadData>() where TPayloadData : IVoiceGatewayPayloadData
-        {
-            Type objectType = typeof(TPayloadData);
-
-            if (objectType.IsGenericType)
-            {
-                return new NotSupportedError("Unable to determine operation code.");
-            }
-
-            return objectType switch
-            {
-                // Commands
-                _ when typeof(IVoiceIdentify).IsAssignableFrom(objectType)
-                => VoiceOperationCode.Identify,
-
-                // Events
-                _ when typeof(IVoiceReady).IsAssignableFrom(objectType)
-                => VoiceOperationCode.Ready,
-
-                // Other
-                _ => new NotSupportedError("Unknown operation code.")
-            };
         }
     }
 }

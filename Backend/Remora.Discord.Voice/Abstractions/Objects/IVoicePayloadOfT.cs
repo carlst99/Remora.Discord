@@ -34,11 +34,6 @@ namespace Remora.Discord.Voice.Abstractions.Objects
     public interface IVoicePayload<out TData> : IVoicePayload
     {
         /// <summary>
-        /// Gets the operation code of the payload.
-        /// </summary>
-        VoiceOperationCode OperationCode { get; }
-
-        /// <summary>
         /// Gets the data contained in the payload.
         /// </summary>
         TData Data { get; }

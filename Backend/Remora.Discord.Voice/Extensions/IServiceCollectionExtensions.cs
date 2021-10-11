@@ -24,11 +24,26 @@ using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Remora.Discord.API.Extensions;
+using Remora.Discord.API.Json;
 using Remora.Discord.Gateway.Extensions;
+using Remora.Discord.Voice.Abstractions.Objects.Bidrectional;
 using Remora.Discord.Voice.Abstractions.Objects.Commands.ConnectingResuming;
+using Remora.Discord.Voice.Abstractions.Objects.Commands.Heartbeats;
+using Remora.Discord.Voice.Abstractions.Objects.Commands.Protocols;
+using Remora.Discord.Voice.Abstractions.Objects.Events.Clients;
 using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
+using Remora.Discord.Voice.Abstractions.Objects.Events.Heartbeats;
+using Remora.Discord.Voice.Abstractions.Objects.Events.Sessions;
 using Remora.Discord.Voice.Abstractions.Services;
+using Remora.Discord.Voice.Json;
+using Remora.Discord.Voice.Objects.Bidirectional;
 using Remora.Discord.Voice.Objects.Commands.ConnectingResuming;
+using Remora.Discord.Voice.Objects.Commands.Heartbeats;
+using Remora.Discord.Voice.Objects.Commands.Protocols;
+using Remora.Discord.Voice.Objects.Events.Clients;
+using Remora.Discord.Voice.Objects.Events.ConnectingResuming;
+using Remora.Discord.Voice.Objects.Events.Heartbeats;
+using Remora.Discord.Voice.Objects.Events.Sessions;
 using Remora.Discord.Voice.Responders;
 using Remora.Discord.Voice.Services;
 using System.Text.Json;
@@ -65,14 +80,12 @@ namespace Remora.Discord.Voice.Extensions
                 (
                     options =>
                     {
-                        //options.Converters.Add(new PayloadConverter(allowUnknownEvents));
+                        options.Converters.Add(new VoicePayloadConverter());
 
                         options
                             .AddVoiceGatewayBidirectionalConverters()
                             .AddVoiceGatewayCommandConverters()
                             .AddVoiceGatewayEventConverters();
-
-                        //options.AddDataObjectConverter<IUnknownEvent, UnknownEvent>();
                     }
                 );
 
@@ -86,9 +99,7 @@ namespace Remora.Discord.Voice.Extensions
         /// <returns>The options, with the converters added.</returns>
         private static JsonSerializerOptions AddVoiceGatewayBidirectionalConverters(this JsonSerializerOptions options)
         {
-            //options
-            //    .AddConverter<HeartbeatConverter>()
-            //    .AddDataObjectConverter<IHeartbeatAcknowledge, HeartbeatAcknowledge>();
+            options.AddDataObjectConverter<IVoiceSpeaking, VoiceSpeaking>();
 
             return options;
         }
@@ -100,16 +111,16 @@ namespace Remora.Discord.Voice.Extensions
         /// <returns>The options, with the converters added.</returns>
         private static JsonSerializerOptions AddVoiceGatewayCommandConverters(this JsonSerializerOptions options)
         {
+            // ConnectingResuming
             options.AddDataObjectConverter<IVoiceIdentify, VoiceIdentify>();
+            options.AddDataObjectConverter<IVoiceResume, VoiceResume>();
 
-            //options.AddDataObjectConverter<IUpdatePresence, UpdatePresence>()
-            //    .WithPropertyName(u => u.IsAFK, "afk")
-            //    .WithPropertyConverter
-            //    (
-            //        u => u.Status,
-            //        new StringEnumConverter<ClientStatus>(new SnakeCaseNamingPolicy())
-            //    )
-            //    .WithPropertyConverter(u => u.Since, new UnixMillisecondsDateTimeOffsetConverter());
+            // Heartbeats
+            options.AddDataObjectConverter<IVoiceHeartbeat, VoiceHeartbeat>();
+
+            // Protocols
+            options.AddDataObjectConverter<IVoiceProtocolData, VoiceProtocolData>();
+            options.AddDataObjectConverter<IVoiceSelectProtocol, VoiceSelectProtocol>();
 
             return options;
         }
@@ -121,23 +132,18 @@ namespace Remora.Discord.Voice.Extensions
         /// <returns>The options, with the converters added.</returns>
         private static JsonSerializerOptions AddVoiceGatewayEventConverters(this JsonSerializerOptions options)
         {
-            // Connecting and resuming
-            //options.AddDataObjectConverter<IHello, Hello>()
-            //    .WithPropertyConverter(h => h.HeartbeatInterval, new UnitTimeSpanConverter(TimeUnit.Milliseconds));
+            // ConnectingResuming
+            options.AddDataObjectConverter<IVoiceHello, VoiceHello>()
+                .WithPropertyConverter(v => v.HeartbeatInterval, new UnitTimeSpanConverter(TimeUnit.Milliseconds));
 
-            options.AddDataObjectConverter<IVoiceReady, VoiceReady>()
-                .WithPropertyName(r => r.Version, "v");
+            options.AddDataObjectConverter<IVoiceReady, VoiceReady>();
 
-            //options.AddDataObjectConverter<IReconnect, Reconnect>();
-            //options.AddDataObjectConverter<IResumed, Resumed>();
+            // Heartbeats
+            options.AddDataObjectConverter<IVoiceHeartbeatAcknowledge, VoiceHeartbeatAcknowledge>();
 
-            //// Channels
-            //options.AddDataObjectConverter<IChannelCreate, ChannelCreate>()
-            //    .WithPropertyName(c => c.IsNsfw, "nsfw")
-            //    .WithPropertyConverter(c => c.RateLimitPerUser, new UnitTimeSpanConverter(TimeUnit.Seconds));
-
-            //// Other
-            //options.AddDataObjectConverter<IUnknownEvent, UnknownEvent>();
+            // Sessions
+            options.AddDataObjectConverter<IVoiceClientDisconnect, VoiceClientDisconnect>();
+            options.AddDataObjectConverter<IVoiceSessionDescription, VoiceSessionDescription>();
 
             return options;
         }

@@ -23,6 +23,7 @@
 using System;
 using System.Buffers;
 using System.IO;
+using System.IO.Pipelines;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -46,6 +47,8 @@ namespace Remora.Discord.Voice.Services
     {
         private readonly IServiceProvider _services;
         private readonly JsonSerializerOptions _jsonOptions;
+        private readonly Pipe _receivePipe;
+        private readonly Pipe _sendPipe;
 
         /// <summary>
         /// Holds the currently available websocket client.
@@ -68,6 +71,9 @@ namespace Remora.Discord.Voice.Services
         {
             _services = services;
             _jsonOptions = jsonOptions.Value;
+
+            _receivePipe = new Pipe();
+            _sendPipe = new Pipe();
         }
 
         /// <inheritdoc />
@@ -134,10 +140,7 @@ namespace Remora.Discord.Voice.Services
 
                 if (memoryStream.Length > 4096)
                 {
-                    return new NotSupportedError
-                    (
-                        "The payload was too large to be accepted by the gateway."
-                    );
+                    return new NotSupportedError("The payload was too large to be accepted by the gateway.");
                 }
 
                 int dataLength = (int)memoryStream.Length;
@@ -298,6 +301,71 @@ namespace Remora.Discord.Voice.Services
             }
 
             await DisconnectAsync(false).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Reads data from the send pipe and writes it to the socket.
+        /// </summary>
+        /// <param name="reader">The pipe reader to use.</param>
+        /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
+        /// <returns>A <see cref="Task"/> object representing the asynchronous operation.</returns>
+        private async Task<Result> GetSendPipeReadTask(PipeReader reader, CancellationToken ct)
+        {
+            while (!ct.IsCancellationRequested && _clientWebSocket?.State is WebSocketState.Open)
+            {
+                ReadResult result = await reader.ReadAsync(ct).ConfigureAwait(false);
+
+                if (result.IsCanceled)
+                {
+                    break;
+                }
+
+                ReadOnlySequence<byte> buffer = result.Buffer;
+                SequencePosition? position;
+
+                do
+                {
+                    // Look for a EOL in the buffer
+                    position = buffer.PositionOf((byte)'\n');
+
+                    if (position != null)
+                    {
+                        // Process the line
+                        ReadOnlySequence<byte> jsonObjectData = buffer.Slice(0, position.Value);
+
+                        if (!jsonObjectData.IsSingleSegment || jsonObjectData.First.Length > 4096)
+                        {
+                            return new NotSupportedError("The payload was too large to be accepted by the gateway.");
+                        }
+
+                        await _clientWebSocket.SendAsync(jsonObjectData.First, WebSocketMessageType.Text, true, ct).ConfigureAwait(false);
+
+                        if (_clientWebSocket.CloseStatus.HasValue)
+                        {
+                            if (Enum.IsDefined(typeof(VoiceGatewayCloseStatus), (int)_clientWebSocket.CloseStatus))
+                            {
+                                return new VoiceGatewayDiscordError((VoiceGatewayCloseStatus)_clientWebSocket.CloseStatus);
+                            }
+
+                            return new VoiceGatewayWebSocketError(_clientWebSocket.CloseStatus.Value);
+                        }
+
+                        // Skip the json object line + the \n character
+                        buffer = buffer.Slice(buffer.GetPosition(1, position.Value));
+                    }
+                }
+                while (position != null);
+
+                if (result.IsCompleted)
+                {
+                    break;
+                }
+
+                await Task.Delay(20, ct).ConfigureAwait(false); // Sleep for a little
+            }
+
+            reader.Complete();
+            return Result.FromSuccess();
         }
     }
 }

@@ -30,7 +30,6 @@ using Remora.Discord.Gateway;
 using Remora.Discord.Gateway.Results;
 using Remora.Discord.Voice.Abstractions.Objects;
 using Remora.Discord.Voice.Abstractions.Objects.Commands;
-using Remora.Discord.Voice.Abstractions.Objects.Commands.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Errors;
@@ -116,10 +115,6 @@ namespace Remora.Discord.Voice
 
                 if (!getConnectionDetails.IsDefined())
                 {
-                    // TODO: We've got too many of these calls on return.
-                    // Have a result return field, and a custom exception to break into a specific catch which disconnects and returns the result?
-                    SendDisconnectVoiceStateUpdate(guildID);
-
                     return Result.FromError(getConnectionDetails);
                 }
 
@@ -129,16 +124,12 @@ namespace Remora.Discord.Voice
 
                 if (voiceServer.Endpoint is null)
                 {
-                    SendDisconnectVoiceStateUpdate(guildID);
-
                     return new VoiceServerUnavailableError();
                 }
 
                 string endpoint = $"wss://{voiceServer.Endpoint}?v=4";
                 if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var gatewayUri))
                 {
-                    SendDisconnectVoiceStateUpdate(guildID);
-
                     return new GatewayError
                     (
                         "Failed to parse the received voice gateway endpoint.",
@@ -149,8 +140,6 @@ namespace Remora.Discord.Voice
                 Result connectResult = await _transportService.ConnectAsync(gatewayUri, ct).ConfigureAwait(false);
                 if (!connectResult.IsSuccess)
                 {
-                    SendDisconnectVoiceStateUpdate(guildID);
-
                     return connectResult;
                 }
 
@@ -159,8 +148,6 @@ namespace Remora.Discord.Voice
                 Result<IVoicePayload> helloPayload = await _transportService.ReceivePayloadAsync(ct).ConfigureAwait(false);
                 if (!helloPayload.IsDefined())
                 {
-                    SendDisconnectVoiceStateUpdate(guildID);
-
                     return Result.FromError
                     (
                         new VoiceGatewayError("The first payload from the voice gateway was not a hello. Rude!", true),
@@ -186,8 +173,6 @@ namespace Remora.Discord.Voice
 
                 if (!identifyResult.IsSuccess)
                 {
-                    SendDisconnectVoiceStateUpdate(guildID);
-
                     return identifyResult;
                 }
 
@@ -196,8 +181,6 @@ namespace Remora.Discord.Voice
                 Result<IVoicePayload> readyPayload = await _transportService.ReceivePayloadAsync(ct).ConfigureAwait(false);
                 if (!readyPayload.IsDefined())
                 {
-                    SendDisconnectVoiceStateUpdate(guildID);
-
                     return Result.FromError
                     (
                         new VoiceGatewayError("Failed to receive voice ready payload", true),
@@ -207,8 +190,6 @@ namespace Remora.Discord.Voice
 
                 if (readyPayload.Entity is not IVoicePayload<IVoiceReady> hello)
                 {
-                    SendDisconnectVoiceStateUpdate(guildID);
-
                     return new GatewayError("The first payload from the gateway was not a ready message.", true);
                 }
 
@@ -226,8 +207,10 @@ namespace Remora.Discord.Voice
             {
                 return ex;
             }
-
-            SendDisconnectVoiceStateUpdate(guildID);
+            finally
+            {
+                SendDisconnectVoiceStateUpdate(guildID);
+            }
 
             return Result.FromSuccess();
         }

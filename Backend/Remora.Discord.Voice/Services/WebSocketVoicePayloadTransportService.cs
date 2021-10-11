@@ -128,7 +128,6 @@ namespace Remora.Discord.Voice.Services
 
             await using var memoryStream = new MemoryStream(); // TODO: Use recyclable memory stream
 
-            byte[]? buffer = null;
             try
             {
                 await JsonSerializer.SerializeAsync(memoryStream, payload, _jsonOptions, ct).ConfigureAwait(false);
@@ -141,15 +140,15 @@ namespace Remora.Discord.Voice.Services
                     );
                 }
 
-                buffer = ArrayPool<byte>.Shared.Rent((int)memoryStream.Length);
+                int dataLength = (int)memoryStream.Length;
+                IMemoryOwner<byte> buffer = MemoryPool<byte>.Shared.Rent(dataLength);
                 memoryStream.Seek(0, SeekOrigin.Begin);
 
                 // Copy the data
-                Memory<byte> bufferSegment = buffer.AsMemory(0, (int)memoryStream.Length);
-                await memoryStream.ReadAsync(bufferSegment, ct).ConfigureAwait(false);
+                await memoryStream.ReadAsync(buffer.Memory[0..dataLength], ct).ConfigureAwait(false);
 
                 // Send the whole payload as one chunk
-                await _clientWebSocket.SendAsync(bufferSegment, WebSocketMessageType.Text, true, ct).ConfigureAwait(false);
+                await _clientWebSocket.SendAsync(buffer.Memory[0..dataLength], WebSocketMessageType.Text, true, ct).ConfigureAwait(false);
 
                 if (_clientWebSocket.CloseStatus.HasValue)
                 {
@@ -161,12 +160,9 @@ namespace Remora.Discord.Voice.Services
                     return new VoiceGatewayWebSocketError(_clientWebSocket.CloseStatus.Value);
                 }
             }
-            finally
+            catch (Exception ex)
             {
-                if (buffer is not null)
-                {
-                    ArrayPool<byte>.Shared.Return(buffer);
-                }
+                return ex;
             }
 
             return Result.FromSuccess();

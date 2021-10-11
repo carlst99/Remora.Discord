@@ -168,6 +168,8 @@ namespace Remora.Discord.Voice
                     );
                 }
 
+                /* TODO: Setup heartbeating */
+
                 Console.WriteLine("Hello received succesfully, sending identify...");
 
                 Result identifyResult = await SendCommand

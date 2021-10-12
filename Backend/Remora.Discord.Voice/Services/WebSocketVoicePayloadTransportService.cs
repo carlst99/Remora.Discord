@@ -22,6 +22,7 @@
 
 using System;
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.IO;
 using System.IO.Pipelines;
 using System.Net.WebSockets;
@@ -53,12 +54,7 @@ namespace Remora.Discord.Voice.Services
         private readonly IServiceProvider _services;
         private readonly JsonSerializerOptions _jsonOptions;
 
-        private readonly Pipe _receivePipe;
-        private readonly Pipe _sendPipe;
-        private readonly Utf8JsonWriter _sendPipeWriter;
-        private readonly byte[] _objectDelimiter = new byte[] { (byte)'\n' };
-
-        private Task<Result>? _sendPipeReadTask;
+        private readonly SemaphoreSlim _payloadSendSemaphore;
 
         /// <summary>
         /// Holds the currently available websocket client.
@@ -82,13 +78,7 @@ namespace Remora.Discord.Voice.Services
             _services = services;
             _jsonOptions = jsonOptions.Value;
 
-            _receivePipe = new Pipe();
-            _sendPipe = new Pipe(new PipeOptions(minimumSegmentSize: MaxCommandSize));
-            _sendPipeWriter = new Utf8JsonWriter
-            (
-                _sendPipe.Writer,
-                new JsonWriterOptions { SkipValidation = true }
-            );
+            _payloadSendSemaphore = new SemaphoreSlim(1, 1);
         }
 
         /// <inheritdoc />
@@ -129,7 +119,6 @@ namespace Remora.Discord.Voice.Services
             }
 
             _clientWebSocket = socket;
-            _sendPipeReadTask = ReadSendPipe(_sendPipe.Reader, CancellationToken.None); // TODO: Need a proper token here
 
             this.IsConnected = true;
             return Result.FromSuccess();
@@ -138,37 +127,41 @@ namespace Remora.Discord.Voice.Services
         /// <inheritdoc />
         public async Task<Result> SendPayloadAsync<TPayload>(TPayload payload, CancellationToken ct = default) where TPayload : IVoicePayload
         {
-            if (_sendPipeReadTask is null)
+            if (_clientWebSocket is null)
             {
-                return new InvalidOperationError("The send task is not setup.");
+                return new InvalidOperationError("The transport service is not connected.");
             }
 
-            // Check the send task for errors
-            if (_sendPipeReadTask.IsCompleted)
+            if (_clientWebSocket.State is not WebSocketState.Open)
             {
-                Result result = await _sendPipeReadTask.ConfigureAwait(false);
-                if (!result.IsSuccess)
-                {
-                    return result;
-                }
+                return new InvalidOperationError("The socket is not open.");
             }
+
+            await _payloadSendSemaphore.WaitAsync(ct).ConfigureAwait(false);
 
             try
             {
-                JsonSerializer.Serialize(_sendPipeWriter, payload, _jsonOptions);
+                ArrayBufferWriter<byte> bufferWriter = new(MaxCommandSize);
+                using Utf8JsonWriter jsonWriter = new(bufferWriter, new JsonWriterOptions { SkipValidation = true });
 
-                _sendPipe.Writer.Write(_objectDelimiter);
-                _sendPipe.Writer.Advance(1);
+                JsonSerializer.Serialize(jsonWriter, payload, _jsonOptions);
 
-                FlushResult result = await _sendPipe.Writer.FlushAsync(ct).ConfigureAwait(false);
-                if (!result.IsCompleted)
+                ReadOnlyMemory<byte> data = bufferWriter.WrittenMemory;
+
+                if (data.Length > MaxCommandSize)
                 {
-                    return new InvalidOperationError("The send task is not setup.");
+                    return new NotSupportedError("The payload was too large to be accepted by the gateway.");
                 }
+
+                await _clientWebSocket.SendAsync(data, WebSocketMessageType.Text, true, ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 return ex;
+            }
+            finally
+            {
+                _payloadSendSemaphore.Release();
             }
 
             return Result.FromSuccess();
@@ -304,99 +297,6 @@ namespace Remora.Discord.Voice.Services
             }
 
             await DisconnectAsync(false).ConfigureAwait(false);
-        }
-
-        /// <summary>
-        /// Reads data from the send pipe and writes it to the socket.
-        /// </summary>
-        /// <param name="reader">The pipe reader to use.</param>
-        /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
-        /// <returns>A <see cref="Task"/> object representing the asynchronous operation.</returns>
-        private async Task<Result> ReadSendPipe(PipeReader reader, CancellationToken ct)
-        {
-            try
-            {
-                while (!ct.IsCancellationRequested)
-                {
-                    if (_clientWebSocket is null)
-                    {
-                        return new InvalidOperationError("The transport service is not connected.");
-                    }
-
-                    if (_clientWebSocket.State is not WebSocketState.Open)
-                    {
-                        return new InvalidOperationError("The socket was not open.");
-                    }
-
-                    ReadResult result = await reader.ReadAsync(ct).ConfigureAwait(false);
-
-                    if (result.IsCanceled)
-                    {
-                        break;
-                    }
-
-                    ReadOnlySequence<byte> buffer = result.Buffer;
-                    SequencePosition? position;
-
-                    do
-                    {
-                        // Look for a EOL in the buffer
-                        position = buffer.PositionOf((byte)'\n');
-
-                        if (position != null)
-                        {
-                            // Process the line
-                            ReadOnlySequence<byte> jsonObjectData = buffer.Slice(0, position.Value);
-
-                            if (jsonObjectData.Length > MaxCommandSize)
-                            {
-                                return new NotSupportedError("The payload was too large to be accepted by the gateway.");
-                            }
-
-                            SequencePosition dataPosition = jsonObjectData.Start;
-                            while (jsonObjectData.TryGet(ref dataPosition, out ReadOnlyMemory<byte> dataSegment, true))
-                            {
-                                bool isEnd = dataPosition.GetInteger() + dataSegment.Length == jsonObjectData.End.GetInteger();
-
-                                await _clientWebSocket.SendAsync(dataSegment, WebSocketMessageType.Text, isEnd, ct).ConfigureAwait(false);
-                            }
-
-                            await _clientWebSocket.SendAsync(jsonObjectData.First, WebSocketMessageType.Text, true, ct).ConfigureAwait(false);
-
-                            if (_clientWebSocket.CloseStatus.HasValue)
-                            {
-                                if (Enum.IsDefined(typeof(VoiceGatewayCloseStatus), (int)_clientWebSocket.CloseStatus))
-                                {
-                                    return new VoiceGatewayDiscordError((VoiceGatewayCloseStatus)_clientWebSocket.CloseStatus);
-                                }
-
-                                return new VoiceGatewayWebSocketError(_clientWebSocket.CloseStatus.Value);
-                            }
-
-                            // Skip the json object line + the \n character
-                            buffer = buffer.Slice(buffer.GetPosition(1, position.Value));
-                        }
-                    }
-                    while (position != null);
-
-                    if (result.IsCompleted)
-                    {
-                        break;
-                    }
-
-                    await Task.Delay(20, ct).ConfigureAwait(false); // Sleep for a little
-                }
-            }
-            catch (Exception ex)
-            {
-                return ex;
-            }
-            finally
-            {
-                reader.Complete();
-            }
-
-            return new TaskCanceledException();
         }
     }
 }

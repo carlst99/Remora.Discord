@@ -31,10 +31,12 @@ using Remora.Discord.Gateway.Results;
 using Remora.Discord.Voice.Abstractions.Objects;
 using Remora.Discord.Voice.Abstractions.Objects.Commands;
 using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
+using Remora.Discord.Voice.Abstractions.Objects.Events.Heartbeats;
 using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Errors;
 using Remora.Discord.Voice.Objects;
 using Remora.Discord.Voice.Objects.Commands.ConnectingResuming;
+using Remora.Discord.Voice.Objects.Commands.Heartbeats;
 using Remora.Results;
 
 namespace Remora.Discord.Voice
@@ -157,8 +159,6 @@ namespace Remora.Discord.Voice
 
                 /* TODO: Setup heartbeating */
 
-                Console.WriteLine("Hello received succesfully, sending identify...");
-
                 Result identifyResult = await SendCommand
                 (
                     new VoiceIdentify
@@ -193,7 +193,38 @@ namespace Remora.Discord.Voice
                     return new GatewayError("The first payload from the gateway was not a ready message.", true);
                 }
 
-                Console.WriteLine("Ready received successfully");
+                Console.WriteLine("Ready received successfully, heartbeating...");
+
+                Result heartbeatResult = await SendCommand
+                (
+                    new VoiceHeartbeat(long.MaxValue),
+                    ct
+                ).ConfigureAwait(false);
+
+                if (!heartbeatResult.IsSuccess)
+                {
+                    return heartbeatResult;
+                }
+
+                Result<IVoicePayload> heartbeatResponse = await _transportService.ReceivePayloadAsync(ct).ConfigureAwait(false);
+                if (!heartbeatResponse.IsDefined())
+                {
+                    return Result.FromError
+                    (
+                        new VoiceGatewayError("Failed to receive heartbeat payload", true),
+                        heartbeatResponse
+                    );
+                }
+
+                if (heartbeatResponse.Entity is not IVoicePayload<IVoiceHeartbeatAcknowledge> heartbeatAck)
+                {
+                    return new GatewayError("The first payload from the gateway was not a ready message.", true);
+                }
+
+                if (heartbeatAck.Data.Nonce != long.MaxValue.ToString())
+                {
+                    return new GatewayError("Invalid heartbeat value received.", true);
+                }
             }
             catch (TaskCanceledException)
             {

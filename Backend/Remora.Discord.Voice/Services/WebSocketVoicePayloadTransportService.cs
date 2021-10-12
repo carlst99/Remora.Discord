@@ -137,8 +137,6 @@ namespace Remora.Discord.Voice.Services
                 return new InvalidOperationError("The socket is not open.");
             }
 
-            await _payloadSendSemaphore.WaitAsync(ct).ConfigureAwait(false);
-
             try
             {
                 ArrayBufferWriter<byte> bufferWriter = new(MaxCommandSize);
@@ -151,6 +149,12 @@ namespace Remora.Discord.Voice.Services
                 if (data.Length > MaxCommandSize)
                 {
                     return new NotSupportedError("The payload was too large to be accepted by the gateway.");
+                }
+
+                bool entered = await _payloadSendSemaphore.WaitAsync(1000, ct).ConfigureAwait(false);
+                if (!entered)
+                {
+                    return new OperationCanceledException("Could not enter semaphore.");
                 }
 
                 await _clientWebSocket.SendAsync(data, WebSocketMessageType.Text, true, ct).ConfigureAwait(false);

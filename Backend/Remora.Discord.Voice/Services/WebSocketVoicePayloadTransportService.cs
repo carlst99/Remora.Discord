@@ -24,7 +24,6 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Pipelines;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -33,6 +32,7 @@ using System.Threading.Tasks;
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.IO;
 using Remora.Discord.Voice.Abstractions.Objects;
 using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Errors;
@@ -50,15 +50,15 @@ namespace Remora.Discord.Voice.Services
         /// <summary>
         /// Gets the maximum size in bytes that a command may be.
         /// </summary>
-        private const int MaxCommandSize = 4096;
+        private const int MaxPayloadSize = 4096;
 
         private readonly IServiceProvider _services;
+        private readonly RecyclableMemoryStreamManager _memoryStreamManager;
         private readonly JsonSerializerOptions _jsonOptions;
 
         private readonly SemaphoreSlim _payloadSendSemaphore;
-        private readonly Utf8JsonWriter _payloadJsonWriter;
-
         private readonly SemaphoreSlim _payloadReceiveSemaphore;
+        private readonly Utf8JsonWriter _payloadJsonWriter;
 
         private ArrayBufferWriter<byte> _payloadSendBuffer;
 
@@ -74,18 +74,21 @@ namespace Remora.Discord.Voice.Services
         /// Initializes a new instance of the <see cref="WebSocketVoicePayloadTransportService"/> class.
         /// </summary>
         /// <param name="services">The services available to the application.</param>
+        /// <param name="memoryStreamManager">A <see cref="RecyclableMemoryStream"/> pool.</param>
         /// <param name="jsonOptions">The JSON options.</param>
         public WebSocketVoicePayloadTransportService
         (
             IServiceProvider services,
+            RecyclableMemoryStreamManager memoryStreamManager,
             IOptions<JsonSerializerOptions> jsonOptions
         )
         {
             _services = services;
+            _memoryStreamManager = memoryStreamManager;
             _jsonOptions = jsonOptions.Value;
 
             _payloadSendSemaphore = new SemaphoreSlim(1, 1);
-            _payloadSendBuffer = new ArrayBufferWriter<byte>(MaxCommandSize);
+            _payloadSendBuffer = new ArrayBufferWriter<byte>(MaxPayloadSize);
             _payloadJsonWriter = new Utf8JsonWriter
             (
                 _payloadSendBuffer,
@@ -157,10 +160,10 @@ namespace Remora.Discord.Voice.Services
 
                 ReadOnlyMemory<byte> data = _payloadSendBuffer.WrittenMemory;
 
-                if (data.Length > MaxCommandSize)
+                if (data.Length > MaxPayloadSize)
                 {
                     // Reset the backing buffer so we don't hold on to more memory than necessary
-                    _payloadSendBuffer = new ArrayBufferWriter<byte>(MaxCommandSize);
+                    _payloadSendBuffer = new ArrayBufferWriter<byte>(MaxPayloadSize);
                     _payloadJsonWriter.Reset(_payloadSendBuffer);
 
                     return new NotSupportedError("The payload was too large to be accepted by the gateway.");
@@ -201,7 +204,8 @@ namespace Remora.Discord.Voice.Services
                 return new InvalidOperationError("The socket was not open.");
             }
 
-            List<IMemoryOwner<byte>> dataMemorySegments = new();
+            await using MemoryStream ms = _memoryStreamManager.GetStream();
+            IMemoryOwner<byte> segmentBufferOwner = MemoryPool<byte>.Shared.Rent(MaxPayloadSize);
 
             try
             {
@@ -209,8 +213,7 @@ namespace Remora.Discord.Voice.Services
 
                 do
                 {
-                    IMemoryOwner<byte> segmentBuffer = MemoryPool<byte>.Shared.Rent(MaxCommandSize);
-                    socketReceiveResult = await _clientWebSocket.ReceiveAsync(segmentBuffer.Memory, ct).ConfigureAwait(false);
+                    socketReceiveResult = await _clientWebSocket.ReceiveAsync(segmentBufferOwner.Memory, ct).ConfigureAwait(false);
 
                     if (socketReceiveResult.MessageType is WebSocketMessageType.Close)
                     {
@@ -222,19 +225,14 @@ namespace Remora.Discord.Voice.Services
                         return new VoiceGatewayWebSocketError(_clientWebSocket.CloseStatus.Value);
                     }
 
-                    dataMemorySegments.Add(segmentBuffer);
+                    await ms.WriteAsync(segmentBufferOwner.Memory[..socketReceiveResult.Count], ct).ConfigureAwait(false);
                 }
                 while (!socketReceiveResult.EndOfMessage);
 
-                ReadOnlySequence<byte> buffer = MemoryListToSequence(dataMemorySegments, socketReceiveResult.Count);
+                ms.Seek(0, SeekOrigin.Begin);
 
-                Result<IVoicePayload?> getPayload = DeserializeBufferToPayload(buffer);
-                if (!getPayload.IsSuccess)
-                {
-                    return Result<IVoicePayload>.FromError(getPayload);
-                }
-
-                if (getPayload.Entity is null)
+                var payload = await JsonSerializer.DeserializeAsync<IVoicePayload>(ms, _jsonOptions, ct).ConfigureAwait(false);
+                if (payload is null)
                 {
                     return new NotSupportedError
                     (
@@ -242,7 +240,7 @@ namespace Remora.Discord.Voice.Services
                     );
                 }
 
-                return Result<IVoicePayload>.FromSuccess(getPayload.Entity);
+                return Result<IVoicePayload>.FromSuccess(payload);
             }
             catch (Exception ex)
             {
@@ -250,49 +248,7 @@ namespace Remora.Discord.Voice.Services
             }
             finally
             {
-                foreach (IMemoryOwner<byte> memoryOwner in dataMemorySegments)
-                {
-                    memoryOwner.Dispose();
-                }
-
-                dataMemorySegments.Clear();
-            }
-        }
-
-        /// <summary>
-        /// Converts a list of memory segments into a <see cref="ReadOnlySequence{T}"/> object.
-        /// </summary>
-        /// <param name="memorySegments">The segments to join with the sequence.</param>
-        /// <param name="endIndex">The index into the last memory segment at which the data ends.</param>
-        /// <returns>A <see cref="ReadOnlySequence{T}"/> instance representing the memory segments.</returns>
-        private ReadOnlySequence<byte> MemoryListToSequence(IList<IMemoryOwner<byte>> memorySegments, int endIndex)
-        {
-            MemorySegment<byte> first = new(memorySegments[0].Memory);
-
-            MemorySegment<byte> current = first;
-            for (int i = 1; i < memorySegments.Count; i++)
-            {
-                current = current.Append(memorySegments[i].Memory);
-            }
-
-            return new ReadOnlySequence<byte>(first, 0, current, endIndex);
-        }
-
-        /// <summary>
-        /// Deserializes a voice payload object from a byte buffer.
-        /// </summary>
-        /// <param name="buffer">The byte buffer.</param>
-        /// <returns>A result representing the deserialized object.</returns>
-        private Result<IVoicePayload?> DeserializeBufferToPayload(ReadOnlySequence<byte> buffer)
-        {
-            try
-            {
-                Utf8JsonReader jsonReader = new(buffer);
-                return Result<IVoicePayload?>.FromSuccess(JsonSerializer.Deserialize<IVoicePayload>(ref jsonReader, _jsonOptions));
-            }
-            catch (Exception ex)
-            {
-                return ex;
+                segmentBufferOwner.Dispose();
             }
         }
 

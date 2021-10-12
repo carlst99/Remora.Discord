@@ -24,6 +24,7 @@ using System.Text.Json;
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.IO;
 using Remora.Discord.API.Extensions;
 using Remora.Discord.API.Json;
 using Remora.Discord.Gateway.Extensions;
@@ -67,6 +68,7 @@ namespace Remora.Discord.Voice.Extensions
         /// <returns>The service collection, with the services added.</returns>
         public static IServiceCollection AddDiscordVoice(this IServiceCollection serviceCollection)
         {
+            serviceCollection.TryAddSingleton<RecyclableMemoryStreamManager>();
             serviceCollection.TryAddTransient<IVoicePayloadTransportService, WebSocketVoicePayloadTransportService>();
 
             serviceCollection.TryAddSingleton<IConnectionEstablishmentWaiterService, ConnectionEstablishmentWaiterService>();

@@ -45,7 +45,7 @@ namespace Remora.Discord.Benchmarks
 
         public PayloadSerializationBenchmarks()
         {
-            _payload = new Payload();
+            _payload = Payload.LessThan4096();
 
             _payloadSendSemaphore = new SemaphoreSlim(1, 1);
             _payloadSendBuffer = new ArrayBufferWriter<byte>(4096);

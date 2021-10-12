@@ -27,21 +27,24 @@ using System.Collections.Generic;
 
 namespace Remora.Discord.Benchmarks.Data
 {
-    public record Payload
+    public record Payload(int Number, List<string> StringList)
     {
-        public int Number { get; }
+        public static Payload LessThan4096()
+            => Generate(500);
 
-        public List<string> StringList { get; }
+        public static Payload MoreThan4096()
+            => Generate(1000);
 
-        public Payload()
+        private static Payload Generate(int stringCount)
         {
-            Number = int.MaxValue;
-            StringList = new List<string>();
+            List<string> strings = new();
 
-            for (int i = 0; i < 1000; i++)
+            for (int i = 0; i < stringCount; i++)
             {
-                StringList.Add(i.ToString());
+                strings.Add(i.ToString());
             }
+
+            return new Payload(int.MaxValue, strings);
         }
     }
 }

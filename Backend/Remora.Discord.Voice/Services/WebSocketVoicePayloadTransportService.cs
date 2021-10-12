@@ -22,9 +22,7 @@
 
 using System;
 using System.Buffers;
-using System.Collections.Concurrent;
 using System.IO;
-using System.IO.Pipelines;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -133,7 +131,7 @@ namespace Remora.Discord.Voice.Services
         }
 
         /// <inheritdoc />
-        public async Task<Result> SendPayloadAsync<TPayload>(TPayload payload, CancellationToken ct = default) where TPayload : IVoicePayload
+        public async ValueTask<Result> SendPayloadAsync<TPayload>(TPayload payload, CancellationToken ct = default) where TPayload : IVoicePayload
         {
             if (_clientWebSocket is null)
             {

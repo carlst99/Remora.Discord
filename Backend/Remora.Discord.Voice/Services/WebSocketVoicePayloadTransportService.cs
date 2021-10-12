@@ -22,6 +22,7 @@
 
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipelines;
 using System.Net.WebSockets;
@@ -35,6 +36,7 @@ using Microsoft.Extensions.Options;
 using Remora.Discord.Voice.Abstractions.Objects;
 using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Errors;
+using Remora.Discord.Voice.Objects;
 using Remora.Results;
 
 namespace Remora.Discord.Voice.Services
@@ -57,7 +59,6 @@ namespace Remora.Discord.Voice.Services
         private readonly Utf8JsonWriter _payloadJsonWriter;
 
         private readonly SemaphoreSlim _payloadReceiveSemaphore;
-        private readonly Pipe _payloadReceivePipe;
 
         private ArrayBufferWriter<byte> _payloadSendBuffer;
 
@@ -92,10 +93,6 @@ namespace Remora.Discord.Voice.Services
             );
 
             _payloadReceiveSemaphore = new SemaphoreSlim(1, 1);
-            _payloadReceivePipe = new Pipe
-            (
-                new PipeOptions(minimumSegmentSize: MaxCommandSize)
-            );
         }
 
         /// <inheritdoc />
@@ -204,14 +201,16 @@ namespace Remora.Discord.Voice.Services
                 return new InvalidOperationError("The socket was not open.");
             }
 
+            List<IMemoryOwner<byte>> dataMemorySegments = new();
+
             try
             {
                 ValueWebSocketReceiveResult socketReceiveResult;
 
                 do
                 {
-                    Memory<byte> segmentBuffer = _payloadReceivePipe.Writer.GetMemory(MaxCommandSize);
-                    socketReceiveResult = await _clientWebSocket.ReceiveAsync(segmentBuffer, ct).ConfigureAwait(false);
+                    IMemoryOwner<byte> segmentBuffer = MemoryPool<byte>.Shared.Rent(MaxCommandSize);
+                    socketReceiveResult = await _clientWebSocket.ReceiveAsync(segmentBuffer.Memory, ct).ConfigureAwait(false);
 
                     if (socketReceiveResult.MessageType is WebSocketMessageType.Close)
                     {
@@ -223,19 +222,13 @@ namespace Remora.Discord.Voice.Services
                         return new VoiceGatewayWebSocketError(_clientWebSocket.CloseStatus.Value);
                     }
 
-                    _payloadReceivePipe.Writer.Advance(socketReceiveResult.Count);
+                    dataMemorySegments.Add(segmentBuffer);
                 }
                 while (!socketReceiveResult.EndOfMessage);
 
-                FlushResult flushResult = await _payloadReceivePipe.Writer.FlushAsync(ct).ConfigureAwait(false);
-                if (flushResult.IsCanceled)
-                {
-                    return new TaskCanceledException();
-                }
+                ReadOnlySequence<byte> buffer = MemoryListToSequence(dataMemorySegments, socketReceiveResult.Count);
 
-                ReadResult readResult = await _payloadReceivePipe.Reader.ReadAsync(ct).ConfigureAwait(false);
-
-                Result<IVoicePayload?> getPayload = DeserializeBufferToPayload(readResult.Buffer, socketReceiveResult.Count);
+                Result<IVoicePayload?> getPayload = DeserializeBufferToPayload(buffer);
                 if (!getPayload.IsSuccess)
                 {
                     return Result<IVoicePayload>.FromError(getPayload);
@@ -249,27 +242,52 @@ namespace Remora.Discord.Voice.Services
                     );
                 }
 
-                _payloadReceivePipe.Reader.AdvanceTo(readResult.Buffer.Start, readResult.Buffer.End);
-
                 return Result<IVoicePayload>.FromSuccess(getPayload.Entity);
             }
             catch (Exception ex)
             {
                 return ex;
             }
+            finally
+            {
+                foreach (IMemoryOwner<byte> memoryOwner in dataMemorySegments)
+                {
+                    memoryOwner.Dispose();
+                }
+
+                dataMemorySegments.Clear();
+            }
+        }
+
+        /// <summary>
+        /// Converts a list of memory segments into a <see cref="ReadOnlySequence{T}"/> object.
+        /// </summary>
+        /// <param name="memorySegments">The segments to join with the sequence.</param>
+        /// <param name="endIndex">The index into the last memory segment at which the data ends.</param>
+        /// <returns>A <see cref="ReadOnlySequence{T}"/> instance representing the memory segments.</returns>
+        private ReadOnlySequence<byte> MemoryListToSequence(IList<IMemoryOwner<byte>> memorySegments, int endIndex)
+        {
+            MemorySegment<byte> first = new(memorySegments[0].Memory);
+
+            MemorySegment<byte> current = first;
+            for (int i = 1; i < memorySegments.Count; i++)
+            {
+                current = current.Append(memorySegments[i].Memory);
+            }
+
+            return new ReadOnlySequence<byte>(first, 0, current, endIndex);
         }
 
         /// <summary>
         /// Deserializes a voice payload object from a byte buffer.
         /// </summary>
         /// <param name="buffer">The byte buffer.</param>
-        /// <param name="payloadEndInBuffer">The position into the buffer at which the payload data ends.</param>
         /// <returns>A result representing the deserialized object.</returns>
-        private Result<IVoicePayload?> DeserializeBufferToPayload(ReadOnlySequence<byte> buffer, int payloadEndInBuffer)
+        private Result<IVoicePayload?> DeserializeBufferToPayload(ReadOnlySequence<byte> buffer)
         {
             try
             {
-                Utf8JsonReader jsonReader = new(buffer.Slice(0, payloadEndInBuffer));
+                Utf8JsonReader jsonReader = new(buffer);
                 return Result<IVoicePayload?>.FromSuccess(JsonSerializer.Deserialize<IVoicePayload>(ref jsonReader, _jsonOptions));
             }
             catch (Exception ex)
@@ -328,9 +346,6 @@ namespace Remora.Discord.Voice.Services
             _clientWebSocket.Dispose();
             _clientWebSocket = null;
 
-            _payloadReceivePipe.Reader.Complete();
-            _payloadReceivePipe.Writer.Complete();
-
             this.IsConnected = false;
             return Result.FromSuccess();
         }
@@ -349,7 +364,6 @@ namespace Remora.Discord.Voice.Services
 
             await _payloadJsonWriter.DisposeAsync().ConfigureAwait(false);
             _payloadSendSemaphore.Dispose();
-
             _payloadReceiveSemaphore.Dispose();
         }
     }

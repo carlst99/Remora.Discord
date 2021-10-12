@@ -23,6 +23,7 @@
 using System;
 using System.Buffers;
 using System.IO;
+using System.IO.Pipelines;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -53,8 +54,12 @@ namespace Remora.Discord.Voice.Services
         private readonly JsonSerializerOptions _jsonOptions;
 
         private readonly SemaphoreSlim _payloadSendSemaphore;
-        private readonly ArrayBufferWriter<byte> _payloadSendBuffer;
         private readonly Utf8JsonWriter _payloadJsonWriter;
+
+        private readonly SemaphoreSlim _payloadReceiveSemaphore;
+        private readonly Pipe _payloadReceivePipe;
+
+        private ArrayBufferWriter<byte> _payloadSendBuffer;
 
         /// <summary>
         /// Holds the currently available websocket client.
@@ -84,6 +89,12 @@ namespace Remora.Discord.Voice.Services
             (
                 _payloadSendBuffer,
                 new JsonWriterOptions { SkipValidation = true } // The JSON Serializer should handle everything correctly
+            );
+
+            _payloadReceiveSemaphore = new SemaphoreSlim(1, 1);
+            _payloadReceivePipe = new Pipe
+            (
+                new PipeOptions(minimumSegmentSize: MaxCommandSize)
             );
         }
 
@@ -151,6 +162,10 @@ namespace Remora.Discord.Voice.Services
 
                 if (data.Length > MaxCommandSize)
                 {
+                    // Reset the backing buffer so we don't hold on to more memory than necessary
+                    _payloadSendBuffer = new ArrayBufferWriter<byte>(MaxCommandSize);
+                    _payloadJsonWriter.Reset(_payloadSendBuffer);
+
                     return new NotSupportedError("The payload was too large to be accepted by the gateway.");
                 }
 
@@ -189,19 +204,16 @@ namespace Remora.Discord.Voice.Services
                 return new InvalidOperationError("The socket was not open.");
             }
 
-            await using var memoryStream = new MemoryStream(); // TODO: Recyclable memory stream
-
-            IMemoryOwner<byte> buffer = MemoryPool<byte>.Shared.Rent(4096);
-
             try
             {
-                ValueWebSocketReceiveResult result;
+                ValueWebSocketReceiveResult socketReceiveResult;
 
                 do
                 {
-                    result = await _clientWebSocket.ReceiveAsync(buffer.Memory, ct).ConfigureAwait(false);
+                    Memory<byte> segmentBuffer = _payloadReceivePipe.Writer.GetMemory(MaxCommandSize);
+                    socketReceiveResult = await _clientWebSocket.ReceiveAsync(segmentBuffer, ct).ConfigureAwait(false);
 
-                    if (result.MessageType is WebSocketMessageType.Close)
+                    if (socketReceiveResult.MessageType is WebSocketMessageType.Close)
                     {
                         if (Enum.IsDefined(typeof(VoiceGatewayCloseStatus), (int)_clientWebSocket.CloseStatus!.Value))
                         {
@@ -211,21 +223,25 @@ namespace Remora.Discord.Voice.Services
                         return new VoiceGatewayWebSocketError(_clientWebSocket.CloseStatus.Value);
                     }
 
-                    await memoryStream.WriteAsync(buffer.Memory.Slice(0, result.Count), ct).ConfigureAwait(false);
+                    _payloadReceivePipe.Writer.Advance(socketReceiveResult.Count);
                 }
-                while (!result.EndOfMessage);
+                while (!socketReceiveResult.EndOfMessage);
 
-                memoryStream.Seek(0, SeekOrigin.Begin);
-
-                using (StreamReader sr = new(memoryStream, Encoding.UTF8, true, -1, true))
+                FlushResult flushResult = await _payloadReceivePipe.Writer.FlushAsync(ct).ConfigureAwait(false);
+                if (flushResult.IsCanceled)
                 {
-                    string jsonValue = sr.ReadToEnd();
-                    Console.WriteLine(jsonValue);
-                    memoryStream.Seek(0, SeekOrigin.Begin);
+                    return new TaskCanceledException();
                 }
 
-                var payload = await JsonSerializer.DeserializeAsync<IVoicePayload>(memoryStream, _jsonOptions, ct).ConfigureAwait(false);
-                if (payload is null)
+                ReadResult readResult = await _payloadReceivePipe.Reader.ReadAsync(ct).ConfigureAwait(false);
+
+                Result<IVoicePayload?> getPayload = DeserializeBufferToPayload(readResult.Buffer, socketReceiveResult.Count);
+                if (!getPayload.IsSuccess)
+                {
+                    return Result<IVoicePayload>.FromError(getPayload);
+                }
+
+                if (getPayload.Entity is null)
                 {
                     return new NotSupportedError
                     (
@@ -233,7 +249,28 @@ namespace Remora.Discord.Voice.Services
                     );
                 }
 
-                return Result<IVoicePayload>.FromSuccess(payload);
+                _payloadReceivePipe.Reader.AdvanceTo(readResult.Buffer.Start, readResult.Buffer.End);
+
+                return Result<IVoicePayload>.FromSuccess(getPayload.Entity);
+            }
+            catch (Exception ex)
+            {
+                return ex;
+            }
+        }
+
+        /// <summary>
+        /// Deserializes a voice payload object from a byte buffer.
+        /// </summary>
+        /// <param name="buffer">The byte buffer.</param>
+        /// <param name="payloadEndInBuffer">The position into the buffer at which the payload data ends.</param>
+        /// <returns>A result representing the deserialized object.</returns>
+        private Result<IVoicePayload?> DeserializeBufferToPayload(ReadOnlySequence<byte> buffer, int payloadEndInBuffer)
+        {
+            try
+            {
+                Utf8JsonReader jsonReader = new(buffer.Slice(0, payloadEndInBuffer));
+                return Result<IVoicePayload?>.FromSuccess(JsonSerializer.Deserialize<IVoicePayload>(ref jsonReader, _jsonOptions));
             }
             catch (Exception ex)
             {
@@ -291,6 +328,9 @@ namespace Remora.Discord.Voice.Services
             _clientWebSocket.Dispose();
             _clientWebSocket = null;
 
+            _payloadReceivePipe.Reader.Complete();
+            _payloadReceivePipe.Writer.Complete();
+
             this.IsConnected = false;
             return Result.FromSuccess();
         }
@@ -306,6 +346,11 @@ namespace Remora.Discord.Voice.Services
             }
 
             await DisconnectAsync(false).ConfigureAwait(false);
+
+            await _payloadJsonWriter.DisposeAsync().ConfigureAwait(false);
+            _payloadSendSemaphore.Dispose();
+
+            _payloadReceiveSemaphore.Dispose();
         }
     }
 }

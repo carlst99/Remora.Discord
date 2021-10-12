@@ -55,6 +55,8 @@ namespace Remora.Discord.Voice.Services
         private readonly JsonSerializerOptions _jsonOptions;
 
         private readonly SemaphoreSlim _payloadSendSemaphore;
+        private readonly ArrayBufferWriter<byte> _payloadSendBuffer;
+        private readonly Utf8JsonWriter _payloadJsonWriter;
 
         /// <summary>
         /// Holds the currently available websocket client.
@@ -79,6 +81,12 @@ namespace Remora.Discord.Voice.Services
             _jsonOptions = jsonOptions.Value;
 
             _payloadSendSemaphore = new SemaphoreSlim(1, 1);
+            _payloadSendBuffer = new ArrayBufferWriter<byte>(MaxCommandSize);
+            _payloadJsonWriter = new Utf8JsonWriter
+            (
+                _payloadSendBuffer,
+                new JsonWriterOptions { SkipValidation = true } // The JSON Serializer should handle everything correctly
+            );
         }
 
         /// <inheritdoc />
@@ -139,12 +147,9 @@ namespace Remora.Discord.Voice.Services
 
             try
             {
-                ArrayBufferWriter<byte> bufferWriter = new(MaxCommandSize);
-                using Utf8JsonWriter jsonWriter = new(bufferWriter, new JsonWriterOptions { SkipValidation = true });
+                JsonSerializer.Serialize(_payloadJsonWriter, payload, _jsonOptions);
 
-                JsonSerializer.Serialize(jsonWriter, payload, _jsonOptions);
-
-                ReadOnlyMemory<byte> data = bufferWriter.WrittenMemory;
+                ReadOnlyMemory<byte> data = _payloadSendBuffer.WrittenMemory;
 
                 if (data.Length > MaxCommandSize)
                 {
@@ -166,6 +171,8 @@ namespace Remora.Discord.Voice.Services
             finally
             {
                 _payloadSendSemaphore.Release();
+                _payloadSendBuffer.Clear();
+                _payloadJsonWriter.Reset();
             }
 
             return Result.FromSuccess();

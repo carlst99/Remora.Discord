@@ -75,7 +75,7 @@ namespace Remora.Discord.Benchmarks
         }
 
         [Benchmark(Baseline = true)]
-        public async Task<Payload?> Old()
+        public async Task<Payload?> Current()
         {
             await using var memoryStream = new MemoryStream();
 
@@ -96,7 +96,7 @@ namespace Remora.Discord.Benchmarks
         }
 
         [Benchmark]
-        public async Task<Payload?> OldWithMemoryPool()
+        public async Task<Payload?> CurrentWithMemoryPool()
         {
             await using var memoryStream = new MemoryStream();
 
@@ -117,7 +117,7 @@ namespace Remora.Discord.Benchmarks
         }
 
         [Benchmark]
-        public async Task<Payload?> OldWithRecyclableMemoryStream()
+        public async Task<Payload?> CurrentWithRecyclableMemoryStream()
         {
             await using var memoryStream = _memoryStreamManager.GetStream();
 
@@ -138,7 +138,28 @@ namespace Remora.Discord.Benchmarks
         }
 
         [Benchmark]
-        public async Task<Payload?> New()
+        public async Task<Payload?> CurrentWithBothAndConfigureAwait()
+        {
+            await using var memoryStream = _memoryStreamManager.GetStream();
+
+            var buffer = MemoryPool<byte>.Shared.Rent(MaxPayloadSize);
+
+            for (int i = 0; i < _dataBlocks.Count; i++)
+            {
+                _dataBlocks[i].CopyTo(buffer.Memory);
+                await memoryStream.WriteAsync(buffer.Memory[.._dataBlocks[i].Length]).ConfigureAwait(false);
+            }
+
+            memoryStream.Seek(0, SeekOrigin.Begin);
+
+            var payload = await JsonSerializer.DeserializeAsync<Payload>(memoryStream).ConfigureAwait(false);
+            buffer.Dispose();
+
+            return payload;
+        }
+
+        [Benchmark]
+        public async Task<Payload?> NewWithSequences()
         {
             List<IMemoryOwner<byte>> dataMemorySegments = new();
             await _payloadReceiveSemaphore.WaitAsync().ConfigureAwait(false);
@@ -161,30 +182,6 @@ namespace Remora.Discord.Benchmarks
 
             dataMemorySegments.Clear();
             _payloadReceiveSemaphore.Release();
-
-            return p;
-        }
-
-        [Benchmark]
-        public async Task<Payload?> NewWithPipes()
-        {
-            PipeWriter writer = _receivePipe.Writer;
-
-            for (int i = 0; i < _dataBlocks.Count; i++)
-            {
-                Memory<byte> segmentBuffer = writer.GetMemory(MaxPayloadSize);
-                _dataBlocks[i].CopyTo(segmentBuffer);
-                writer.Advance(_dataBlocks[i].Length);
-            }
-
-            await writer.FlushAsync().ConfigureAwait(false);
-
-            PipeReader reader = _receivePipe.Reader;
-            ReadResult readResult = await reader.ReadAsync().ConfigureAwait(false);
-            ReadOnlySequence<byte> readBuffer = readResult.Buffer;
-
-            Payload? p = DeserializeBufferToPayload(readBuffer);
-            reader.AdvanceTo(readBuffer.Start, readBuffer.End);
 
             return p;
         }

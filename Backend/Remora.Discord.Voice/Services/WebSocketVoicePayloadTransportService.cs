@@ -22,10 +22,8 @@
 
 using System;
 using System.Buffers;
-using System.Collections.Generic;
 using System.IO;
 using System.Net.WebSockets;
-using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -36,7 +34,6 @@ using Microsoft.IO;
 using Remora.Discord.Voice.Abstractions.Objects;
 using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Errors;
-using Remora.Discord.Voice.Objects;
 using Remora.Results;
 
 namespace Remora.Discord.Voice.Services
@@ -206,10 +203,17 @@ namespace Remora.Discord.Voice.Services
 
             await using MemoryStream ms = _memoryStreamManager.GetStream();
             IMemoryOwner<byte> segmentBufferOwner = MemoryPool<byte>.Shared.Rent(MaxPayloadSize);
+            bool semaphoreReleased = false;
 
             try
             {
                 ValueWebSocketReceiveResult socketReceiveResult;
+
+                bool entered = await _payloadReceiveSemaphore.WaitAsync(1000, ct).ConfigureAwait(false);
+                if (!entered)
+                {
+                    return new OperationCanceledException("Could not enter semaphore.");
+                }
 
                 do
                 {
@@ -228,6 +232,9 @@ namespace Remora.Discord.Voice.Services
                     await ms.WriteAsync(segmentBufferOwner.Memory[..socketReceiveResult.Count], ct).ConfigureAwait(false);
                 }
                 while (!socketReceiveResult.EndOfMessage);
+
+                _payloadReceiveSemaphore.Release();
+                semaphoreReleased = true;
 
                 ms.Seek(0, SeekOrigin.Begin);
 
@@ -249,6 +256,11 @@ namespace Remora.Discord.Voice.Services
             finally
             {
                 segmentBufferOwner.Dispose();
+
+                if (!semaphoreReleased)
+                {
+                    _payloadReceiveSemaphore.Release();
+                }
             }
         }
 

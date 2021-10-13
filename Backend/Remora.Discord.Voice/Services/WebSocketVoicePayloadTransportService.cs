@@ -194,7 +194,7 @@ namespace Remora.Discord.Voice.Services
         }
 
         /// <inheritdoc />
-        public async Task<Result<IVoicePayload>> ReceivePayloadAsync(CancellationToken ct = default)
+        public async ValueTask<Result<IVoicePayload>> ReceivePayloadAsync(CancellationToken ct = default)
         {
             if (_clientWebSocket is null)
             {
@@ -323,16 +323,16 @@ namespace Remora.Discord.Voice.Services
         {
             GC.SuppressFinalize(this);
 
+            await _payloadJsonWriter.DisposeAsync().ConfigureAwait(false);
+            _payloadSendSemaphore.Dispose();
+            _payloadReceiveSemaphore.Dispose();
+
             if (_clientWebSocket is null)
             {
                 return;
             }
 
             await DisconnectAsync(false).ConfigureAwait(false);
-
-            await _payloadJsonWriter.DisposeAsync().ConfigureAwait(false);
-            _payloadSendSemaphore.Dispose();
-            _payloadReceiveSemaphore.Dispose();
         }
 
         /// <summary>

@@ -79,7 +79,7 @@ namespace Remora.Discord.Voice.Abstractions.Services
         /// </remarks>
         /// <param name="ct">The cancellation token for this operation.</param>
         /// <returns>A receive result which may or may not have succeeded.</returns>
-        Task<Result<IVoicePayload>> ReceivePayloadAsync(CancellationToken ct = default);
+        ValueTask<Result<IVoicePayload>> ReceivePayloadAsync(CancellationToken ct = default);
 
         /// <summary>
         /// Disconnects from the transport endpoint.

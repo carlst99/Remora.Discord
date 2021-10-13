@@ -81,16 +81,6 @@ namespace Remora.Discord.Voice
         private Task<Result>? _sendTask;
 
         /// <summary>
-        /// The time a heartbeat acknowledgement was last received, represented using <see cref="DateTimeOffset.Ticks"/>.
-        /// </summary>
-        private long _lastReceivedHeartbeatAck;
-
-        /// <summary>
-        /// The nonce attached to the last received payload.
-        /// </summary>
-        private int _lastReceivedHeartbeatNonce;
-
-        /// <summary>
         /// Initializes a new instance of the <see cref="DiscordVoiceClient"/> class.
         /// </summary>
         /// <param name="gatewayClient">The gateway client.</param>
@@ -122,7 +112,7 @@ namespace Remora.Discord.Voice
         }
 
         /// <summary>
-        /// Starts and connects the voice gateway client.
+        /// Runs the voice gateway client.
         /// <para>
         /// This task will not complete until cancelled (or faulted), maintaining the connection for the duration of it.
         ///
@@ -173,6 +163,18 @@ namespace Remora.Discord.Voice
                     }
                 }
 
+                _disconnectRequestedSource.Cancel();
+                Result disconnectResult = await _transportService.DisconnectAsync(false, ct).ConfigureAwait(false);
+                if (!disconnectResult.IsSuccess)
+                {
+                    return disconnectResult;
+                }
+
+                if (_sendTask is not null)
+                {
+                    _ = await _sendTask.ConfigureAwait(false);
+                }
+
                 return Result.FromSuccess();
             }
             catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
@@ -185,6 +187,8 @@ namespace Remora.Discord.Voice
             }
             finally
             {
+                _disconnectRequestedSource.Dispose();
+                _sendTask?.Dispose();
                 SendDisconnectVoiceStateUpdate(connectionParameters.GuildID);
             }
         }

@@ -74,11 +74,15 @@ namespace Remora.Discord.Voice
         /// </summary>
         private CancellationTokenSource _disconnectRequestedSource;
 
-        private GatewayConnectionStatus _connectionStatus;
         private VoiceConnectionEstablishmentDetails? _connectionDetails;
         private IVoiceReady? _voiceServerData;
 
         private Task<Result>? _sendTask;
+
+        /// <summary>
+        /// Gets the connection status of the voice gateway.
+        /// </summary>
+        public GatewayConnectionStatus ConnectionStatus { get; private set; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="DiscordVoiceClient"/> class.
@@ -108,7 +112,7 @@ namespace Remora.Discord.Voice
             _receivedPayloads = new ConcurrentQueue<IVoicePayload>();
             _disconnectRequestedSource = new CancellationTokenSource();
 
-            _connectionStatus = GatewayConnectionStatus.Offline;
+            ConnectionStatus = GatewayConnectionStatus.Offline;
         }
 
         /// <summary>
@@ -128,14 +132,14 @@ namespace Remora.Discord.Voice
         {
             try
             {
-                if (_connectionStatus is not GatewayConnectionStatus.Offline)
+                if (ConnectionStatus is not GatewayConnectionStatus.Offline)
                 {
                     return new InvalidOperationError("Already running.");
                 }
 
                 while (!ct.IsCancellationRequested)
                 {
-                    switch (_connectionStatus)
+                    switch (ConnectionStatus)
                     {
                         case GatewayConnectionStatus.Offline:
                             Result initialConnectionResult = await InitialConnectionAsync(connectionParameters, ct).ConfigureAwait(false);
@@ -302,7 +306,7 @@ namespace Remora.Discord.Voice
                 break;
             }
 
-            _connectionStatus = GatewayConnectionStatus.Connected;
+            ConnectionStatus = GatewayConnectionStatus.Connected;
             return Result.FromSuccess();
         }
 
@@ -369,7 +373,7 @@ namespace Remora.Discord.Voice
                     if (receiveEvent.Error is VoiceGatewayDiscordError)
                     {
                         // Reconnect on next iteration
-                        _connectionStatus = GatewayConnectionStatus.Offline;
+                        ConnectionStatus = GatewayConnectionStatus.Offline;
                         return Result.FromSuccess();
                     }
 
@@ -398,7 +402,7 @@ namespace Remora.Discord.Voice
                 _receivedPayloads.Enqueue(receiveEvent.Entity);
             }
 
-            _connectionStatus = GatewayConnectionStatus.Connected;
+            ConnectionStatus = GatewayConnectionStatus.Connected;
             return Result.FromSuccess();
         }
 

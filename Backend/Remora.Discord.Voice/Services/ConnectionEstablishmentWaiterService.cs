@@ -133,6 +133,8 @@ namespace Remora.Discord.Voice.Services
                     return new KeyNotFoundException("Internal state was unexpectedly modified.");
                 }
 
+                _pendingRequests.Remove(guildID);
+
                 return new VoiceConnectionEstablishmentDetails(stateUpdate, serverUpdate);
             }
 

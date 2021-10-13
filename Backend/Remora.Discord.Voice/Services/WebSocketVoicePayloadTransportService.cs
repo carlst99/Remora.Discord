@@ -173,6 +173,11 @@ namespace Remora.Discord.Voice.Services
                 }
 
                 await _clientWebSocket.SendAsync(data, WebSocketMessageType.Text, true, ct).ConfigureAwait(false);
+
+                if (_clientWebSocket.CloseStatus.HasValue)
+                {
+                    return ConstructCloseError();
+                }
             }
             catch (Exception ex)
             {
@@ -221,12 +226,7 @@ namespace Remora.Discord.Voice.Services
 
                     if (socketReceiveResult.MessageType is WebSocketMessageType.Close)
                     {
-                        if (Enum.IsDefined(typeof(VoiceGatewayCloseStatus), (int)_clientWebSocket.CloseStatus!.Value))
-                        {
-                            return new VoiceGatewayDiscordError((VoiceGatewayCloseStatus)_clientWebSocket.CloseStatus.Value);
-                        }
-
-                        return new VoiceGatewayWebSocketError(_clientWebSocket.CloseStatus.Value);
+                        return ConstructCloseError();
                     }
 
                     await ms.WriteAsync(segmentBufferOwner.Memory[..socketReceiveResult.Count], ct).ConfigureAwait(false);
@@ -333,6 +333,21 @@ namespace Remora.Discord.Voice.Services
             await _payloadJsonWriter.DisposeAsync().ConfigureAwait(false);
             _payloadSendSemaphore.Dispose();
             _payloadReceiveSemaphore.Dispose();
+        }
+
+        /// <summary>
+        /// Constructs a relevant error for the websocket having closed.
+        /// </summary>
+        /// <remarks>Assumes the <see cref="_clientWebSocket"/> field to be non-null.</remarks>
+        /// <returns>A <see cref="VoiceGatewayDiscordError"/> or <see cref="VoiceGatewayWebSocketError"/>.</returns>
+        private ResultError ConstructCloseError()
+        {
+            if (Enum.IsDefined(typeof(VoiceGatewayCloseStatus), (int)_clientWebSocket!.CloseStatus!.Value))
+            {
+                return new VoiceGatewayDiscordError((VoiceGatewayCloseStatus)_clientWebSocket.CloseStatus.Value);
+            }
+
+            return new VoiceGatewayWebSocketError(_clientWebSocket.CloseStatus.Value);
         }
     }
 }

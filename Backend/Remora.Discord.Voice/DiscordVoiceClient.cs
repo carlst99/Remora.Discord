@@ -77,7 +77,7 @@ namespace Remora.Discord.Voice
         private VoiceConnectionEstablishmentDetails? _connectionDetails;
         private IVoiceReady? _voiceServerData;
 
-        private Task<Result>? _sendTask;
+        private Task<Result> _sendTask;
 
         /// <summary>
         /// Gets the connection status of the voice gateway.
@@ -111,6 +111,7 @@ namespace Remora.Discord.Voice
             _payloadsToSend = new ConcurrentQueue<IVoicePayload>();
             _receivedPayloads = new ConcurrentQueue<IVoicePayload>();
             _disconnectRequestedSource = new CancellationTokenSource();
+            _sendTask = Task.FromResult(Result.FromSuccess());
 
             ConnectionStatus = GatewayConnectionStatus.Offline;
         }
@@ -142,42 +143,57 @@ namespace Remora.Discord.Voice
                     switch (ConnectionStatus)
                     {
                         case GatewayConnectionStatus.Offline:
+                            Console.WriteLine("Connecting");
                             Result initialConnectionResult = await InitialConnectionAsync(connectionParameters, ct).ConfigureAwait(false);
                             if (!initialConnectionResult.IsSuccess)
                             {
                                 return initialConnectionResult;
                             }
+                            Console.WriteLine("Connection succeeded");
 
                             // TODO: Setup receive task
                             break;
                         case GatewayConnectionStatus.Disconnected:
+                            Console.WriteLine("Resuming");
                             Result resumeConnectionResult = await ResumeConnectionAsync(ct).ConfigureAwait(false);
                             if (!resumeConnectionResult.IsSuccess)
                             {
                                 return resumeConnectionResult;
                             }
+                            Console.WriteLine("Resume succeeded");
 
                             // TODO: Setup receive task
                             break;
                         case GatewayConnectionStatus.Connected:
-                            // TODO: Check send and receive task
+                            if (_sendTask.IsCompleted)
+                            {
+                                // TODO: Don't just blank return here.
+                                Console.WriteLine("Send task failed.");
+                                Result sendTaskResult = await _sendTask.ConfigureAwait(false);
+                                if (!sendTaskResult.IsSuccess)
+                                {
+                                    return sendTaskResult;
+                                }
+                            }
+
                             // TODO: Dispatch received events
                             // TODO: Check health of voice socket
+                            await Task.Delay(10, ct).ConfigureAwait(false);
                             break;
                     }
                 }
 
+                Console.WriteLine("Disconnect requested.");
                 _disconnectRequestedSource.Cancel();
+
                 Result disconnectResult = await _transportService.DisconnectAsync(false, ct).ConfigureAwait(false);
                 if (!disconnectResult.IsSuccess)
                 {
                     return disconnectResult;
                 }
 
-                if (_sendTask is not null)
-                {
-                    _ = await _sendTask.ConfigureAwait(false);
-                }
+                _ = await _sendTask.ConfigureAwait(false);
+                ConnectionStatus = GatewayConnectionStatus.Offline;
 
                 return Result.FromSuccess();
             }
@@ -454,12 +470,13 @@ namespace Remora.Discord.Voice
                 );
             }
 
-            if (helloPayload.Entity is not IVoiceHello hello)
+            if (helloPayload.Entity is not IVoicePayload<IVoiceHello> hello)
             {
                 return new VoiceGatewayError("The first payload from the voice gateway was not a hello. Rude!", true);
             }
 
-            _heartbeatData.Interval = hello.HeartbeatInterval;
+            _heartbeatData.Interval = hello.Data.HeartbeatInterval;
+            _heartbeatData.LastSentTime = DateTimeOffset.UtcNow;
             _sendTask = GatewaySenderAsync(_disconnectRequestedSource.Token);
 
             return Result.FromSuccess();

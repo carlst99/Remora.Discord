@@ -148,8 +148,13 @@ namespace Remora.Discord.Voice
                 return new InvalidOperationError("This voice client was not running.");
             }
 
-            client.Cts.Cancel();
-            return await client.Task.ConfigureAwait(false);
+            if (!client.Task.IsCompleted)
+            {
+                client.Cts.Cancel();
+            }
+
+            Result d = await client.Task.ConfigureAwait(false);
+            return d;
         }
     }
 }

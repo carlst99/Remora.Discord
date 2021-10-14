@@ -72,9 +72,7 @@ namespace Remora.Discord.Samples.Caching.Commands
             [ChannelTypes(ChannelType.GuildVoice)] IChannel connectTo
         )
         {
-            DiscordVoiceClient voiceClient = _voiceClientFactory.Get(_context.GuildID.Value);
-
-            Result connectResult = await voiceClient.RunAsync(_context.GuildID.Value, connectTo.ID, false, false, CancellationToken);
+            Result connectResult = await _voiceClientFactory.RunAsync(_context.GuildID.Value, connectTo.ID, false, false);
 
             if (!connectResult.IsSuccess)
             {
@@ -82,6 +80,23 @@ namespace Remora.Discord.Samples.Caching.Commands
             }
 
             return await _feedbackService.SendContextualSuccessAsync("Connected!", ct: CancellationToken);
+        }
+
+        /// <summary>
+        /// Disconnects a voice client.
+        /// </summary>
+        /// <returns>A result representing the outcome of the operation.</returns>
+        [Command("disconnect")]
+        public async Task<IResult> DisconnectCommandAsync()
+        {
+            Result disconnectResult = await _voiceClientFactory.StopAsync(_context.GuildID.Value);
+
+            if (!disconnectResult.IsSuccess)
+            {
+                return await _feedbackService.SendContextualErrorAsync(disconnectResult.Error.ToString()!, ct: CancellationToken);
+            }
+
+            return await _feedbackService.SendContextualSuccessAsync("Disconnected!", ct: CancellationToken);
         }
     }
 }

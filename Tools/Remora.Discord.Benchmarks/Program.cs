@@ -1,5 +1,5 @@
 ﻿//
-//  IVoiceHeartbeatAcknowledge.cs
+//  Program.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -20,19 +20,18 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
-using JetBrains.Annotations;
+#pragma warning disable SA1600 // Elements should be documented
+#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
-namespace Remora.Discord.Voice.Abstractions.Objects.Events.Heartbeats
+using BenchmarkDotNet.Running;
+
+namespace Remora.Discord.Benchmarks
 {
-    /// <summary>
-    /// Represents a heartbeat acknowledgement.
-    /// </summary>
-    [PublicAPI]
-    public interface IVoiceHeartbeatAcknowledge : IVoiceGatewayEvent
+    public static class Program
     {
-        /// <summary>
-        /// Gets the nonce used for the received heartbeat.
-        /// </summary>
-        string Nonce { get; }
+        public static void Main(string[] args)
+        {
+            BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
+        }
     }
 }

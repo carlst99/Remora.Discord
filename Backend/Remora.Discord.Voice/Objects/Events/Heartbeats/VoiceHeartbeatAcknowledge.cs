@@ -27,5 +27,5 @@ namespace Remora.Discord.Voice.Objects.Events.Heartbeats
 {
     /// <inheritdoc cref="IVoiceHeartbeatAcknowledge" />
     [PublicAPI]
-    public record VoiceHeartbeatAcknowledge(long Nonce) : IVoiceHeartbeatAcknowledge;
+    public record VoiceHeartbeatAcknowledge(string Nonce) : IVoiceHeartbeatAcknowledge;
 }

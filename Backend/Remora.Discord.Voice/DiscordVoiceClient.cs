@@ -21,13 +21,14 @@
 //
 
 using System;
+using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 using JetBrains.Annotations;
+using Microsoft.Extensions.Options;
 using Remora.Discord.API.Gateway.Commands;
 using Remora.Discord.Core;
 using Remora.Discord.Gateway;
-using Remora.Discord.Gateway.Results;
 using Remora.Discord.Voice.Abstractions.Objects;
 using Remora.Discord.Voice.Abstractions.Objects.Commands;
 using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
@@ -36,6 +37,7 @@ using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Errors;
 using Remora.Discord.Voice.Objects;
 using Remora.Discord.Voice.Objects.Commands.ConnectingResuming;
+using Remora.Discord.Voice.Objects.Commands.Heartbeats;
 using Remora.Results;
 
 namespace Remora.Discord.Voice
@@ -47,53 +49,75 @@ namespace Remora.Discord.Voice
     public sealed class DiscordVoiceClient
     {
         private readonly DiscordGatewayClient _gatewayClient;
+        private readonly DiscordVoiceClientOptions _clientOptions;
         private readonly IConnectionEstablishmentWaiterService _connectionWaiterService;
         private readonly IVoicePayloadTransportService _transportService;
-
-        private GatewayConnectionStatus _connectionStatus;
-
-        /// <summary>
-        /// Holds the session ID.
-        /// </summary>
-        private string? _sessionID;
+        private readonly Random _random;
 
         /// <summary>
-        /// Holds the voice server token.
+        /// Holds data pertaining to the heartbeating process.
         /// </summary>
-        private string? _token;
+        private readonly HeartbeatData _heartbeatData;
 
         /// <summary>
-        /// Holds a value indicating whether the client's current session is resumable.
+        /// Holds payloads that have been submitted by the application, but have not yet been sent to the gateway.
         /// </summary>
-        private bool _isSessionResumable;
+        private readonly ConcurrentQueue<IVoicePayload> _payloadsToSend;
 
         /// <summary>
-        /// Holds a value indicating that the client should reconnect and resume at its earliest convenience.
+        /// Holds payloads that have been received by the gateway, but not yet distributed to the application.
         /// </summary>
-        private bool _shouldReconnect;
+        private readonly ConcurrentQueue<IVoicePayload> _receivedPayloads;
+
+        /// <summary>
+        /// Holds the cancellation token source for internal operations.
+        /// </summary>
+        private CancellationTokenSource _disconnectRequestedSource;
+
+        private VoiceConnectionEstablishmentDetails? _connectionDetails;
+        private IVoiceReady? _voiceServerData;
+
+        private Task<Result> _sendTask;
+
+        /// <summary>
+        /// Gets the connection status of the voice gateway.
+        /// </summary>
+        public GatewayConnectionStatus ConnectionStatus { get; private set; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="DiscordVoiceClient"/> class.
         /// </summary>
         /// <param name="gatewayClient">The gateway client.</param>
+        /// <param name="clientOptions">The client options to use.</param>
         /// <param name="connectionWaiterService">The connection waiter service.</param>
         /// <param name="transportService">The voice payload transport service.</param>
+        /// <param name="random">A random number generator.</param>
         public DiscordVoiceClient
         (
             DiscordGatewayClient gatewayClient,
+            IOptions<DiscordVoiceClientOptions> clientOptions,
             IConnectionEstablishmentWaiterService connectionWaiterService,
-            IVoicePayloadTransportService transportService
+            IVoicePayloadTransportService transportService,
+            Random random
         )
         {
             _gatewayClient = gatewayClient;
+            _clientOptions = clientOptions.Value;
             _connectionWaiterService = connectionWaiterService;
             _transportService = transportService;
+            _random = random;
 
-            _connectionStatus = GatewayConnectionStatus.Offline;
+            _heartbeatData = new HeartbeatData();
+            _payloadsToSend = new ConcurrentQueue<IVoicePayload>();
+            _receivedPayloads = new ConcurrentQueue<IVoicePayload>();
+            _disconnectRequestedSource = new CancellationTokenSource();
+            _sendTask = Task.FromResult(Result.FromSuccess());
+
+            ConnectionStatus = GatewayConnectionStatus.Offline;
         }
 
         /// <summary>
-        /// Starts and connects the voice gateway client.
+        /// Runs the voice gateway client.
         /// <para>
         /// This task will not complete until cancelled (or faulted), maintaining the connection for the duration of it.
         ///
@@ -102,35 +126,80 @@ namespace Remora.Discord.Voice
         /// successful result.
         /// </para>
         /// </summary>
-        /// <param name="guildID">The ID of the guild containing the voice channel to connect to.</param>
-        /// <param name="channelID">The ID of the voice channel to connect to.</param>
-        /// <param name="selfDeafen">Indicates whether the bot user should deafen itself.</param>
-        /// <param name="selfMute">Indicates whether the bot user should mute itself.</param>
+        /// <param name="connectionParameters">The connection parameters to use.</param>
         /// <param name="ct">A token by which the caller can request this method to stop.</param>
         /// <returns>A gateway connection result which may or may not have succeeded.</returns>
-        public async Task<Result> RunAsync(Snowflake guildID, Snowflake channelID, bool selfDeafen, bool selfMute, CancellationToken ct)
+        public async Task<Result> RunAsync(UpdateVoiceState connectionParameters, CancellationToken ct)
         {
             try
             {
-                if (_connectionStatus is not GatewayConnectionStatus.Offline)
+                if (ConnectionStatus is not GatewayConnectionStatus.Offline)
                 {
-                    return new InvalidOperationError("Already connected.");
+                    return new InvalidOperationError("Already running.");
                 }
 
                 while (!ct.IsCancellationRequested)
                 {
+                    switch (ConnectionStatus)
+                    {
+                        case GatewayConnectionStatus.Offline:
+                            Console.WriteLine("Connecting");
+                            Result initialConnectionResult = await InitialConnectionAsync(connectionParameters, ct).ConfigureAwait(false);
+                            if (!initialConnectionResult.IsSuccess)
+                            {
+                                return initialConnectionResult;
+                            }
+                            Console.WriteLine("Connection succeeded");
 
+                            // TODO: Setup receive task
+                            break;
+                        case GatewayConnectionStatus.Disconnected:
+                            Console.WriteLine("Resuming");
+                            Result resumeConnectionResult = await ResumeConnectionAsync(ct).ConfigureAwait(false);
+                            if (!resumeConnectionResult.IsSuccess)
+                            {
+                                return resumeConnectionResult;
+                            }
+                            Console.WriteLine("Resume succeeded");
+
+                            // TODO: Setup receive task
+                            break;
+                        case GatewayConnectionStatus.Connected:
+                            if (_sendTask.IsCompleted)
+                            {
+                                // TODO: Don't just blank return here.
+                                Console.WriteLine("Send task failed.");
+                                Result sendTaskResult = await _sendTask.ConfigureAwait(false);
+                                if (!sendTaskResult.IsSuccess)
+                                {
+                                    return sendTaskResult;
+                                }
+                            }
+
+                            // TODO: Dispatch received events
+                            // TODO: Check health of voice socket
+                            await Task.Delay(10, ct).ConfigureAwait(false);
+                            break;
+                    }
                 }
 
-                Result runIterationResult = await RunConnectionIterationAsync(guildID, selfMute, selfDeafen, channelID, ct).ConfigureAwait(false);
+                Console.WriteLine("Disconnect requested.");
+                _disconnectRequestedSource.Cancel();
+
+                Result disconnectResult = await _transportService.DisconnectAsync(false, ct).ConfigureAwait(false);
+                if (!disconnectResult.IsSuccess)
+                {
+                    return disconnectResult;
+                }
+
+                _ = await _sendTask.ConfigureAwait(false);
+                ConnectionStatus = GatewayConnectionStatus.Offline;
+
+                return Result.FromSuccess();
             }
-            catch (TaskCanceledException)
+            catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
             {
-                // This is fine
-            }
-            catch (OperationCanceledException)
-            {
-                // This is fine
+                return Result.FromSuccess();
             }
             catch (Exception ex)
             {
@@ -138,302 +207,171 @@ namespace Remora.Discord.Voice
             }
             finally
             {
-                SendDisconnectVoiceStateUpdate(guildID);
+                _disconnectRequestedSource.Dispose();
+                _sendTask?.Dispose();
+                SendDisconnectVoiceStateUpdate(connectionParameters.GuildID);
             }
-
-            return Result.FromSuccess();
         }
 
         /// <summary>
-        /// Runs a single iteration of the connection loop.
+        /// Enqueues a voice gateway command for sending.
         /// </summary>
-        /// <param name="ct">A token for requests to stop the outer run loop.</param>
-        /// <returns>A connection result, based on the results of the iteration.</returns>
-        private async Task<Result> RunConnectionIterationAsync(Snowflake guildID, bool selfMute, bool selfDeafen, Snowflake channelID, CancellationToken ct)
+        /// <typeparam name="TCommand">The type of the command to send.</typeparam>
+        /// <param name="command">The command object.</param>
+        public void EnqueueCommand<TCommand>(TCommand command) where TCommand : IVoiceGatewayCommand
         {
-            switch (_connectionStatus)
-            {
-                case GatewayConnectionStatus.Offline:
-                case GatewayConnectionStatus.Disconnected:
-                    {
-                        _gatewayClient.SubmitCommand
-                        (
-                            new UpdateVoiceState
-                            (
-                                guildID,
-                                selfMute,
-                                selfDeafen,
-                                channelID
-                            )
-                        );
-
-                        Result<VoiceConnectionEstablishmentDetails> getConnectionDetails = await _connectionWaiterService.WaitForRequestConfirmation
-                        (
-                            guildID,
-                            ct
-                        ).ConfigureAwait(false);
-
-                        if (!getConnectionDetails.IsDefined())
-                        {
-                            return Result.FromError(getConnectionDetails);
-                        }
-
-                        // Using the full namespace here to help avoid potential confusion between the normal and voice gateway event sets.
-                        API.Abstractions.Gateway.Events.IVoiceStateUpdate voiceState = getConnectionDetails.Entity.VoiceState;
-                        API.Abstractions.Gateway.Events.IVoiceServerUpdate voiceServer = getConnectionDetails.Entity.VoiceServer;
-
-                        if (voiceServer.Endpoint is null)
-                        {
-                            return new VoiceServerUnavailableError();
-                        }
-
-                        string endpoint = $"wss://{voiceServer.Endpoint}?v=4";
-                        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var gatewayUri))
-                        {
-                            return new GatewayError
-                            (
-                                "Failed to parse the received voice gateway endpoint.",
-                                true
-                            );
-                        }
-
-                        Result connectResult = await _transportService.ConnectAsync(gatewayUri, ct).ConfigureAwait(false);
-                        if (!connectResult.IsSuccess)
-                        {
-                            return connectResult;
-                        }
-
-                        Console.WriteLine("Connected, waiting on hello...");
-
-                        Result<IVoicePayload> helloPayload = await _transportService.ReceivePayloadAsync(ct).ConfigureAwait(false);
-                        if (!helloPayload.IsDefined())
-                        {
-                            return Result.FromError
-                            (
-                                new VoiceGatewayError("The first payload from the voice gateway was not a hello. Rude!", true),
-                                helloPayload
-                            );
-                        }
-
-                        Console.WriteLine("Hello received succesfully, sending identify...");
-
-                        if (helloPayload.Entity is not IVoicePayload<IVoiceHello> hello)
-                        {
-                            // Not receiving a hello is a non-recoverable error
-                            return new GatewayError
-                            (
-                                "The first payload from the gateway was not a hello. Rude!",
-                                true
-                            );
-                        }
-
-                        /* TODO: Setup heartbeating */
-
-                        // Set up the send task
-                        var heartbeatInterval = hello.Data.HeartbeatInterval;
-
-                        _sendTask = GatewaySenderAsync(heartbeatInterval, _disconnectRequestedSource.Token);
-
-                        // Attempt to connect or resume
-                        Result handshakeResult = await AttemptHandshakeAsync
-                        (
-                            voiceServer.GuildID,
-                            voiceState.UserID,
-                            voiceState.SessionID,
-                            voiceServer.Token,
-                            ct
-                        ).ConfigureAwait(false);
-
-                        if (!handshakeResult.IsSuccess)
-                        {
-                            return handshakeResult;
-                        }
-
-                        // Now, set up the receive task and start receiving events normally
-                        _receiveTask = GatewayReceiverAsync(_disconnectRequestedSource.Token);
-
-                        _shouldReconnect = false;
-                        _isSessionResumable = false;
-                        _lastReceivedHeartbeatAck = 0;
-
-                        _connectionStatus = GatewayConnectionStatus.Connected;
-
-                        break;
-                    }
-                case GatewayConnectionStatus.Connected:
-                    {
-                        // Process received events and dispatch them to the application
-                        if (_receivedPayloads.TryDequeue(out var payload))
-                        {
-                        }
-
-                        // Check the send and receive tasks for errors
-                        if (_sendTask.IsCompleted)
-                        {
-                            var sendResult = await _sendTask;
-                            if (!sendResult.IsSuccess)
-                            {
-                                return sendResult;
-                            }
-                        }
-
-                        if (_receiveTask.IsCompleted)
-                        {
-                            var receiveResult = await _receiveTask;
-                            if (!receiveResult.IsSuccess)
-                            {
-                                return receiveResult;
-                            }
-                        }
-
-                        try
-                        {
-                            await Task.Delay(TimeSpan.FromMilliseconds(10), ct).ConfigureAwait(false);
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            // will cleanup below
-                        }
-
-                        break;
-                    }
-            }
-
-            if (!ct.IsCancellationRequested)
-            {
-                if (!_shouldReconnect)
-                {
-                    return Result.FromSuccess();
-                }
-            }
-
-            // Terminate the send and receive tasks
-            _disconnectRequestedSource.Cancel();
-
-            // The results of the send and receive tasks are discarded here, because we know that it's going to be a
-            // cancellation
-            _ = await _sendTask;
-            _ = await _receiveTask;
-
-            var disconnectResult = await _transportService.DisconnectAsync(!ct.IsCancellationRequested, ct);
-            if (!disconnectResult.IsSuccess)
-            {
-                return disconnectResult;
-            }
-
-            // Set up the state for the new connection
-            _disconnectRequestedSource.Dispose();
-            _disconnectRequestedSource = new CancellationTokenSource();
-            _connectionStatus = GatewayConnectionStatus.Disconnected;
-
-            return Result.FromSuccess();
+            VoicePayload<TCommand> payload = new(command);
+            _payloadsToSend.Enqueue(payload);
         }
 
         /// <summary>
-        /// Attempts to identify or resume the gateway connection.
+        /// Performs the initial handshake logic to connect with the voice gateway.
+        /// Calls <see cref="ConnectAndBeginSending(Uri, CancellationToken)"/>.
         /// </summary>
-        /// <param name="guildID">The ID of the guild to connect to.</param>
-        /// <param name="userID">The ID of the user to connect as.</param>
-        /// <param name="sessionID">The session ID.</param>
-        /// <param name="token">The server token.</param>
-        /// <param name="ct">The cancellation token for this operation.</param>
-        /// <returns>A connection result which may or may not have succeeded.</returns>
-        private Task<Result> AttemptHandshakeAsync(Snowflake guildID, Snowflake userID, string sessionID, string token, CancellationToken ct = default)
+        /// <param name="connectionParameters">The connection parameters.</param>
+        /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
+        /// <returns>A <see cref="Result"/> representing the outcome of the operation.</returns>
+        private async Task<Result> InitialConnectionAsync
+        (
+            UpdateVoiceState connectionParameters,
+            CancellationToken ct
+        )
         {
-            if (_sessionID is null || !_isSessionResumable)
-            {
-                // We've never connected before, or the current session isn't resumable
-                return CreateNewSessionAsync(guildID, userID, sessionID, token, ct);
-            }
+            _gatewayClient.SubmitCommand(connectionParameters);
 
-            return ResumeExistingSessionAsync(guildID, ct);
-        }
-
-        /// <summary>
-        /// Creates a new session with the gateway, identifying the client.
-        /// </summary>
-        /// <param name="ct">The cancellation token for this operation.</param>
-        /// <returns>A connection result which may or may not have succeeded.</returns>
-        private async Task<Result> CreateNewSessionAsync(Snowflake guildID, Snowflake userID, string sessionID, string token, CancellationToken ct = default)
-        {
-            Result identifyResult = await SendCommand // TODO: Needs to be thread-safe
+            Result<VoiceConnectionEstablishmentDetails> getConnectionDetails = await _connectionWaiterService.WaitForRequestConfirmation
             (
-                new VoiceIdentify
-                (
-                    guildID,
-                    userID,
-                    sessionID,
-                    token
-                ),
+                connectionParameters.GuildID,
                 ct
             ).ConfigureAwait(false);
 
-            if (!identifyResult.IsSuccess)
+            if (!getConnectionDetails.IsDefined())
             {
-                return identifyResult;
+                return Result.FromError(getConnectionDetails);
             }
 
-            Console.WriteLine("Sent identify, waiting on ready response...");
+            _connectionDetails = getConnectionDetails.Entity;
+
+            // Using the full namespace here to help avoid potential confusion between the normal and voice gateway event sets.
+            API.Abstractions.Gateway.Events.IVoiceStateUpdate voiceState = getConnectionDetails.Entity.VoiceState;
+            API.Abstractions.Gateway.Events.IVoiceServerUpdate voiceServer = getConnectionDetails.Entity.VoiceServer;
+
+            if (voiceServer.Endpoint is null)
+            {
+                return new VoiceServerUnavailableError();
+            }
+
+            Result<Uri> constructUriResult = ConstructVoiceGatewayEndpoint(voiceServer.Endpoint);
+            if (!constructUriResult.IsDefined())
+            {
+                return Result.FromError(constructUriResult);
+            }
+
+            // Connect the websocket and start the send task
+            Result webSocketConnectionResult = await ConnectAndBeginSending
+            (
+                constructUriResult.Entity,
+                ct
+            ).ConfigureAwait(false);
+
+            if (!webSocketConnectionResult.IsSuccess)
+            {
+                return webSocketConnectionResult;
+            }
+
+            EnqueueCommand
+            (
+                new VoiceIdentify
+                (
+                    voiceServer.GuildID,
+                    voiceState.UserID,
+                    voiceState.SessionID,
+                    voiceServer.Token
+                )
+            );
 
             while (true)
             {
-                Result<IVoicePayload> getReadyPayload = await _transportService.ReceivePayloadAsync(ct).ConfigureAwait(false);
-                if (!getReadyPayload.IsDefined())
+                if (ct.IsCancellationRequested)
+                {
+                    return new VoiceGatewayError("Operation was cancelled.", true);
+                }
+
+                // TODO: Dispatch
+                Result<IVoicePayload> readyPayload = await _transportService.ReceivePayloadAsync(ct).ConfigureAwait(false);
+                if (!readyPayload.IsDefined())
                 {
                     return Result.FromError
                     (
                         new VoiceGatewayError("Failed to receive voice ready payload", true),
-                        getReadyPayload
+                        readyPayload
                     );
                 }
 
-                if (getReadyPayload.Entity is IVoicePayload<IVoiceHeartbeatAcknowledge>)
+                if (readyPayload.Entity is IVoicePayload<IVoiceHeartbeatAcknowledge>)
                 {
                     continue;
                 }
 
-                if (getReadyPayload.Entity is not IVoicePayload<IVoiceReady> ready)
+                if (readyPayload.Entity is not IVoicePayload<IVoiceReady> ready)
                 {
-                    return new GatewayError("The identification response payload was not a Ready payload.", true);
+                    return new VoiceGatewayError("The identification response payload from the gateway was not a ready message.", true);
                 }
 
-                Console.WriteLine("Ready received successfully");
-                _sessionID = sessionID;
-
+                _voiceServerData = ready.Data;
                 break;
             }
 
+            ConnectionStatus = GatewayConnectionStatus.Connected;
             return Result.FromSuccess();
         }
 
         /// <summary>
-        /// Resumes an existing session with the gateway, replaying missed events.
+        /// Resumes an existing session with the voice gateway, replaying missed events.
         /// </summary>
-        /// <param name="guildID">The ID of the guild to resume a connection to.</param>
-        /// <param name="ct">The cancellation token for this operation.</param>
+        /// <param name="ct">A <see cref="CancellationToken"/>.</param>
         /// <returns>A connection result which may or may not have succeeded.</returns>
-        private async Task<Result> ResumeExistingSessionAsync(Snowflake guildID, CancellationToken ct = default)
+        private async Task<Result> ResumeConnectionAsync
+        (
+            CancellationToken ct
+        )
         {
-            if (_sessionID is null || _token is null)
+            if (_connectionDetails is null)
             {
-                return new InvalidOperationError("There's no previous session to resume.");
+                return new InvalidOperationError("There is no session to resume.");
             }
 
-            Result identifyResult = await SendCommand // TODO: Needs to be thread-safe
+            // Using the full namespace here to help avoid potential confusion between the normal and voice gateway event sets.
+            API.Abstractions.Gateway.Events.IVoiceStateUpdate voiceState = _connectionDetails.VoiceState;
+            API.Abstractions.Gateway.Events.IVoiceServerUpdate voiceServer = _connectionDetails.VoiceServer;
+
+            Result<Uri> constructUriResult = ConstructVoiceGatewayEndpoint(voiceServer.Endpoint!);
+            if (!constructUriResult.IsDefined())
+            {
+                return Result.FromError(constructUriResult);
+            }
+
+            // Connect the websocket and start the send task
+            Result webSocketConnectionResult = await ConnectAndBeginSending
             (
-                new VoiceResume
-                (
-                    guildID,
-                    _sessionID,
-                    _token
-                ),
+                constructUriResult.Entity,
                 ct
             ).ConfigureAwait(false);
 
-            if (!identifyResult.IsSuccess)
+            if (!webSocketConnectionResult.IsSuccess)
             {
-                return identifyResult;
+                return webSocketConnectionResult;
             }
+
+            EnqueueCommand
+            (
+                new VoiceResume
+                (
+                    voiceServer.GuildID,
+                    voiceState.SessionID,
+                    voiceServer.Token
+                )
+            );
 
             // Push resumed events onto the queue
             var resuming = true;
@@ -441,30 +379,230 @@ namespace Remora.Discord.Voice
             {
                 if (ct.IsCancellationRequested)
                 {
-                    return new GatewayError("Operation was cancelled.", false);
+                    return new VoiceGatewayError("Operation was cancelled.", true);
                 }
 
-                var receiveEvent = await _transportService.ReceivePayloadAsync(ct);
+                var receiveEvent = await _transportService.ReceivePayloadAsync(ct).ConfigureAwait(false);
+
                 if (!receiveEvent.IsSuccess)
                 {
-                    return Result.FromError(new GatewayError("Failed to receive a payload.", false), receiveEvent);
+                    if (receiveEvent.Error is VoiceGatewayDiscordError)
+                    {
+                        // Reconnect on next iteration
+                        ConnectionStatus = GatewayConnectionStatus.Offline;
+                        return Result.FromSuccess();
+                    }
+
+                    return Result.FromError
+                    (
+                        new VoiceGatewayError
+                        (
+                            "Failed to receive a payload.",
+                            true
+                        ),
+                        receiveEvent
+                    );
                 }
 
                 switch (receiveEvent.Entity)
                 {
                     case IVoicePayload<IVoiceHeartbeatAcknowledge>:
-                        {
                             continue;
-                        }
                     case IVoicePayload<IVoiceResumed>:
-                        {
+                            // TODO: Dispatch
+                            // UnwrapAndDispatchEvent(receiveEvent.Entity, _disconnectRequestedSource.Token);
                             resuming = false;
                             break;
-                        }
                 }
+
+                _receivedPayloads.Enqueue(receiveEvent.Entity);
             }
 
+            ConnectionStatus = GatewayConnectionStatus.Connected;
             return Result.FromSuccess();
+        }
+
+        /// <summary>
+        /// Constructs a <see cref="Uri"/> to the voice gateway endpoint.
+        /// </summary>
+        /// <param name="endpoint">The provided string endpoint.</param>
+        /// <returns>A <see cref="Result"/> representing the outcome of the operation.</returns>
+        private Result<Uri> ConstructVoiceGatewayEndpoint(string endpoint)
+        {
+            endpoint = $"wss://{endpoint}?v=4";
+            if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var gatewayUri))
+            {
+                return new VoiceGatewayError
+                (
+                    "Failed to parse the received voice gateway endpoint.",
+                    true
+                );
+            }
+
+            return gatewayUri;
+        }
+
+        /// <summary>
+        /// Connects the websocket and begins the send task.
+        /// </summary>
+        /// <param name="gatewayUri">The URI of the voice gateway.</param>
+        /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
+        /// <returns>A <see cref="Result"/> indicating the outcome of the operation.</returns>
+        private async Task<Result> ConnectAndBeginSending
+        (
+            Uri gatewayUri,
+            CancellationToken ct
+        )
+        {
+            Result connectResult = await _transportService.ConnectAsync(gatewayUri, ct).ConfigureAwait(false);
+            if (!connectResult.IsSuccess)
+            {
+                return connectResult;
+            }
+
+            Result<IVoicePayload> helloPayload = await _transportService.ReceivePayloadAsync(ct).ConfigureAwait(false);
+            if (!helloPayload.IsDefined())
+            {
+                return Result.FromError
+                (
+                    new VoiceGatewayError("Failed to receive hello payload.", true),
+                    helloPayload
+                );
+            }
+
+            if (helloPayload.Entity is not IVoicePayload<IVoiceHello> hello)
+            {
+                return new VoiceGatewayError("The first payload from the voice gateway was not a hello. Rude!", true);
+            }
+
+            _heartbeatData.Interval = hello.Data.HeartbeatInterval;
+            _heartbeatData.LastSentTime = DateTimeOffset.UtcNow;
+            _sendTask = GatewaySenderAsync(_disconnectRequestedSource.Token);
+
+            return Result.FromSuccess();
+        }
+
+        /// <summary>
+        /// This method acts as the main entrypoint for the gateway sender task. It processes payloads that are
+        /// submitted by the application to the gateway, sending them to it.
+        /// </summary>
+        /// <param name="ct">A token for requests to disconnect the socket.</param>
+        /// <returns>
+        /// A sender result which may or may not have been successful. A failed result indicates that something
+        /// has gone wrong when sending a payload, and that the connection has been deemed nonviable. A nonviable
+        /// connection should be either terminated, reestablished, or resumed as appropriate.
+        /// </returns>
+        private async Task<Result> GatewaySenderAsync(CancellationToken ct)
+        {
+            await Task.Yield();
+
+            try
+            {
+                while (!ct.IsCancellationRequested)
+                {
+                    Result<TimeSpan> heartbeatResult = await SendHeartbeatAsync(ct).ConfigureAwait(false);
+                    if (!heartbeatResult.IsSuccess)
+                    {
+                        return Result.FromError(heartbeatResult);
+                    }
+
+                    // Check if there are any user-submitted payloads to send
+                    if (!_payloadsToSend.TryDequeue(out var payload))
+                    {
+                        // Let's sleep for a little while
+                        TimeSpan sleepTime = TimeSpan.FromMilliseconds(Math.Clamp(100, 0, heartbeatResult.Entity.TotalMilliseconds));
+                        await Task.Delay(sleepTime, ct).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    var sendResult = await _transportService.SendPayloadAsync(payload, ct).ConfigureAwait(false);
+                    if (sendResult.IsSuccess)
+                    {
+                        continue;
+                    }
+
+                    // Normal closures are okay
+                    return sendResult.Error is VoiceGatewayWebSocketError { CloseStatus: System.Net.WebSockets.WebSocketCloseStatus.NormalClosure }
+                        ? Result.FromSuccess()
+                        : sendResult;
+                }
+
+                return Result.FromSuccess();
+            }
+            catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+            {
+                return Result.FromSuccess();
+            }
+            catch (Exception ex)
+            {
+                return ex;
+            }
+        }
+
+        /// <summary>
+        /// Sends a heartbeat if required.
+        /// </summary>
+        /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
+        /// <returns>
+        /// A <see cref="Result"/> representing the outcome of the operation,
+        /// and containing the maximum safe amount of time needed until the next heartbeat if the operation was successful.
+        /// </returns>
+        private async Task<Result<TimeSpan>> SendHeartbeatAsync(CancellationToken ct)
+        {
+            try
+            {
+                DateTimeOffset now = DateTimeOffset.UtcNow;
+                TimeSpan safetyMargin = _clientOptions.GetTrueHeartbeatSafetyMargin(_heartbeatData.Interval);
+
+                if (_heartbeatData.LastSentTime is null || now - _heartbeatData.LastSentTime >= _heartbeatData.Interval - safetyMargin)
+                {
+                    if (_heartbeatData.LastReceivedAckTime < _heartbeatData.LastSentTime)
+                    {
+                        return new VoiceGatewayError
+                        (
+                            "The server did not respond in time with a heartbeat acknowledgement.",
+                            false
+                        );
+                    }
+
+                    if (_heartbeatData.LastSentNonce != _heartbeatData.LastReceivedNonce)
+                    {
+                        return new VoiceGatewayError
+                        (
+                            "The server did not respond with a valid heartbeat.",
+                            false
+                        );
+                    }
+
+                    _heartbeatData.LastSentNonce = _random.Next();
+                    Result sendHeartbeatResult = await _transportService.SendPayloadAsync
+                    (
+                        new VoicePayload<VoiceHeartbeat>
+                        (
+                            new VoiceHeartbeat(_heartbeatData.LastReceivedNonce)
+                        ),
+                        ct
+                    ).ConfigureAwait(false);
+
+                    if (!sendHeartbeatResult.IsSuccess)
+                    {
+                        return Result<TimeSpan>.FromError
+                        (
+                            new VoiceGatewayError("Failed to send a heartbeat.", false),
+                            sendHeartbeatResult
+                        );
+                    }
+
+                    _heartbeatData.LastSentTime = DateTimeOffset.UtcNow;
+                }
+
+                TimeSpan safeTimeTillNext = _heartbeatData.LastSentTime.Value + _heartbeatData.Interval - safetyMargin - now;
+                return Result<TimeSpan>.FromSuccess(safeTimeTillNext);
+            }
+            catch (Exception ex)
+            {
+                return ex;
+            }
         }
 
         /// <summary>
@@ -482,19 +620,6 @@ namespace Remora.Discord.Voice
                     false
                 )
             );
-        }
-
-        /// <summary>
-        /// Sends a voice gateway command to over the transport service.
-        /// </summary>
-        /// <typeparam name="TCommand">The type of the command to send.</typeparam>
-        /// <param name="command">The command object.</param>
-        /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
-        /// <returns>A result representing the outcome of the operation.</returns>
-        private async Task<Result> SendCommand<TCommand>(TCommand command, CancellationToken ct = default) where TCommand : IVoiceGatewayCommand
-        {
-            VoicePayload<TCommand> payload = new(command);
-            return await _transportService.SendPayloadAsync(payload, ct).ConfigureAwait(false);
         }
     }
 }

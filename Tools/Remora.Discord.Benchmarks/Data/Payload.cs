@@ -1,5 +1,5 @@
 ﻿//
-//  IVoiceHeartbeatAcknowledge.cs
+//  Payload.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -20,19 +20,31 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
-using JetBrains.Annotations;
+#pragma warning disable SA1600 // Elements should be documented
+#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
-namespace Remora.Discord.Voice.Abstractions.Objects.Events.Heartbeats
+using System.Collections.Generic;
+
+namespace Remora.Discord.Benchmarks.Data
 {
-    /// <summary>
-    /// Represents a heartbeat acknowledgement.
-    /// </summary>
-    [PublicAPI]
-    public interface IVoiceHeartbeatAcknowledge : IVoiceGatewayEvent
+    public record Payload(int Number, List<string> StringList)
     {
-        /// <summary>
-        /// Gets the nonce used for the received heartbeat.
-        /// </summary>
-        string Nonce { get; }
+        public static Payload LessThan4096()
+            => Generate(500);
+
+        public static Payload MoreThan4096()
+            => Generate(1000);
+
+        private static Payload Generate(int stringCount)
+        {
+            List<string> strings = new();
+
+            for (int i = 0; i < stringCount; i++)
+            {
+                strings.Add(i.ToString());
+            }
+
+            return new Payload(int.MaxValue, strings);
+        }
     }
 }

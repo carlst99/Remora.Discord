@@ -131,6 +131,7 @@ namespace Remora.Discord.Voice
         /// <returns>A gateway connection result which may or may not have succeeded.</returns>
         public async Task<Result> RunAsync(UpdateVoiceState connectionParameters, CancellationToken ct)
         {
+            // TODO: Non-blocking, manages run loop internally
             try
             {
                 if (ConnectionStatus is not GatewayConnectionStatus.Offline)

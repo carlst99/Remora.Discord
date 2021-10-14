@@ -72,11 +72,16 @@ namespace Remora.Discord.Samples.Caching.Commands
             [ChannelTypes(ChannelType.GuildVoice)] IChannel connectTo
         )
         {
-            Result connectResult = await _voiceClientFactory.RunAsync(_context.GuildID.Value, connectTo.ID, false, false);
+            DiscordVoiceClient client = _voiceClientFactory.Get(_context.GuildID.Value);
 
-            if (!connectResult.IsSuccess)
+            Result runResult = await client.RunAsync(_context.GuildID.Value, connectTo.ID, true, false, CancellationToken).ConfigureAwait(false);
+            if (!runResult.IsSuccess)
             {
-                return await _feedbackService.SendContextualErrorAsync(connectResult.Error.ToString()!, ct: CancellationToken);
+                return await _feedbackService.SendContextualErrorAsync
+                (
+                    $"Failed to start a voice session: {runResult.Error}",
+                    ct: CancellationToken
+                );
             }
 
             return await _feedbackService.SendContextualSuccessAsync("Connected!", ct: CancellationToken);
@@ -89,11 +94,16 @@ namespace Remora.Discord.Samples.Caching.Commands
         [Command("disconnect")]
         public async Task<IResult> DisconnectCommandAsync()
         {
-            Result disconnectResult = await _voiceClientFactory.StopAsync(_context.GuildID.Value);
+            DiscordVoiceClient client = _voiceClientFactory.Get(_context.GuildID.Value);
 
-            if (!disconnectResult.IsSuccess)
+            Result stopResult = await client.StopAsync(CancellationToken).ConfigureAwait(false);
+            if (!stopResult.IsSuccess)
             {
-                return await _feedbackService.SendContextualErrorAsync(disconnectResult.Error.ToString()!, ct: CancellationToken);
+                return await _feedbackService.SendContextualErrorAsync
+                (
+                    $"Failed to stop a voice session: {stopResult.Error}",
+                    ct: CancellationToken
+                );
             }
 
             return await _feedbackService.SendContextualSuccessAsync("Disconnected!", ct: CancellationToken);

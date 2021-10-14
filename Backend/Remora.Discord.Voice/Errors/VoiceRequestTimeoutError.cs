@@ -30,5 +30,5 @@ namespace Remora.Discord.Voice.Errors
     /// </summary>
     [PublicAPI]
     public record VoiceRequestTimeoutError()
-        : ResultError("A valid response to the voice connection request was not receieved in time.");
+        : ResultError("A valid response to the voice connection request was not received in time.");
 }

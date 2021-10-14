@@ -74,10 +74,12 @@ namespace Remora.Discord.Voice
         /// </summary>
         private CancellationTokenSource _disconnectRequestedSource;
 
-        private VoiceConnectionEstablishmentDetails? _connectionDetails;
-        private IVoiceReady? _voiceServerData;
-
+        private Task<Result> _runLoopTask;
         private Task<Result> _sendTask;
+
+        private UpdateVoiceState? _connectionRequestParameters;
+        private VoiceConnectionEstablishmentDetails? _gatewayConnectionDetails;
+        private IVoiceReady? _voiceServerConnectionDetails;
 
         /// <summary>
         /// Gets the connection status of the voice gateway.
@@ -110,7 +112,9 @@ namespace Remora.Discord.Voice
             _heartbeatData = new HeartbeatData();
             _payloadsToSend = new ConcurrentQueue<IVoicePayload>();
             _receivedPayloads = new ConcurrentQueue<IVoicePayload>();
+
             _disconnectRequestedSource = new CancellationTokenSource();
+            _runLoopTask = Task.FromResult(Result.FromSuccess());
             _sendTask = Task.FromResult(Result.FromSuccess());
 
             ConnectionStatus = GatewayConnectionStatus.Offline;
@@ -126,12 +130,21 @@ namespace Remora.Discord.Voice
         /// successful result.
         /// </para>
         /// </summary>
-        /// <param name="connectionParameters">The connection parameters to use.</param>
+        /// <param name="guildID">The ID of the guild to connect to.</param>
+        /// <param name="channelID">The ID of the channel to connect to.</param>
+        /// <param name="isSelfMuted">A value indicating whether the bot should mute itself.</param>
+        /// <param name="isSelfDeafened">A value indicating whether the bot should deafen itself.</param>
         /// <param name="ct">A token by which the caller can request this method to stop.</param>
         /// <returns>A gateway connection result which may or may not have succeeded.</returns>
-        public async Task<Result> RunAsync(UpdateVoiceState connectionParameters, CancellationToken ct)
+        public async Task<Result> RunAsync
+        (
+            Snowflake guildID,
+            Snowflake channelID,
+            bool isSelfMuted,
+            bool isSelfDeafened,
+            CancellationToken ct
+        )
         {
-            // TODO: Non-blocking, manages run loop internally
             try
             {
                 if (ConnectionStatus is not GatewayConnectionStatus.Offline)
@@ -139,6 +152,113 @@ namespace Remora.Discord.Voice
                     return new InvalidOperationError("Already running.");
                 }
 
+                _connectionRequestParameters = new UpdateVoiceState
+                (
+                    guildID,
+                    isSelfMuted,
+                    isSelfDeafened,
+                    channelID
+                );
+                _disconnectRequestedSource = new CancellationTokenSource();
+
+                Result connectResult = await InitialConnectionAsync(_connectionRequestParameters, ct).ConfigureAwait(false);
+                if (!connectResult.IsSuccess)
+                {
+                    return connectResult;
+                }
+
+                _runLoopTask = RunnerAsync(_connectionRequestParameters, _disconnectRequestedSource.Token);
+
+                return Result.FromSuccess();
+            }
+            catch (Exception ex)
+            {
+                return ex;
+            }
+        }
+
+        /// <summary>
+        /// Stops the voice client.
+        /// </summary>
+        /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
+        /// <returns>A <see cref="Result"/> representing the outcome of the operation.</returns>
+        public async Task<Result> StopAsync(CancellationToken ct = default)
+        {
+            try
+            {
+                if (ConnectionStatus is GatewayConnectionStatus.Offline)
+                {
+                    return new InvalidOperationError("Already stopped.");
+                }
+
+                ConnectionStatus = GatewayConnectionStatus.Offline;
+                if (!_disconnectRequestedSource.IsCancellationRequested)
+                {
+                    _disconnectRequestedSource.Cancel();
+                }
+
+                Result disconnectResult = await _transportService.DisconnectAsync(false, ct).ConfigureAwait(false);
+                if (!disconnectResult.IsSuccess)
+                {
+                    return disconnectResult;
+                }
+
+                Result sendTaskResult = await _sendTask.ConfigureAwait(false);
+                if (!sendTaskResult.IsSuccess)
+                {
+                    return sendTaskResult;
+                }
+
+                Result runLoopTaskResult = await _runLoopTask.ConfigureAwait(false);
+                if (!runLoopTaskResult.IsSuccess)
+                {
+                    return runLoopTaskResult;
+                }
+
+                return Result.FromSuccess();
+            }
+            catch (Exception ex)
+            {
+                return ex;
+            }
+            finally
+            {
+                _disconnectRequestedSource.Dispose();
+                _sendTask.Dispose();
+                _runLoopTask.Dispose();
+
+                if (_connectionRequestParameters is not null)
+                {
+                    SendDisconnectVoiceStateUpdate(_connectionRequestParameters.GuildID);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Enqueues a voice gateway command for sending.
+        /// </summary>
+        /// <typeparam name="TCommand">The type of the command to send.</typeparam>
+        /// <param name="command">The command object.</param>
+        public void EnqueueCommand<TCommand>(TCommand command) where TCommand : IVoiceGatewayCommand
+        {
+            VoicePayload<TCommand> payload = new(command);
+            _payloadsToSend.Enqueue(payload);
+        }
+
+        /// <summary>
+        /// Runs the voice connection.
+        /// </summary>
+        /// <param name="connectionParameters">The parameters used to connect to the gateway.</param>
+        /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
+        /// <returns>A <see cref="Result"/> representing the outcome of the operation.</returns>
+        private async Task<Result> RunnerAsync
+        (
+            UpdateVoiceState connectionParameters,
+            CancellationToken ct
+        )
+        {
+            try
+            {
                 while (!ct.IsCancellationRequested)
                 {
                     switch (ConnectionStatus)
@@ -184,18 +304,6 @@ namespace Remora.Discord.Voice
                     }
                 }
 
-                Console.WriteLine("Disconnect requested.");
-                _disconnectRequestedSource.Cancel();
-
-                Result disconnectResult = await _transportService.DisconnectAsync(false, ct).ConfigureAwait(false);
-                if (!disconnectResult.IsSuccess)
-                {
-                    return disconnectResult;
-                }
-
-                _ = await _sendTask.ConfigureAwait(false);
-                ConnectionStatus = GatewayConnectionStatus.Offline;
-
                 return Result.FromSuccess();
             }
             catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
@@ -206,23 +314,6 @@ namespace Remora.Discord.Voice
             {
                 return ex;
             }
-            finally
-            {
-                _disconnectRequestedSource.Dispose();
-                _sendTask?.Dispose();
-                SendDisconnectVoiceStateUpdate(connectionParameters.GuildID);
-            }
-        }
-
-        /// <summary>
-        /// Enqueues a voice gateway command for sending.
-        /// </summary>
-        /// <typeparam name="TCommand">The type of the command to send.</typeparam>
-        /// <param name="command">The command object.</param>
-        public void EnqueueCommand<TCommand>(TCommand command) where TCommand : IVoiceGatewayCommand
-        {
-            VoicePayload<TCommand> payload = new(command);
-            _payloadsToSend.Enqueue(payload);
         }
 
         /// <summary>
@@ -251,7 +342,7 @@ namespace Remora.Discord.Voice
                 return Result.FromError(getConnectionDetails);
             }
 
-            _connectionDetails = getConnectionDetails.Entity;
+            _gatewayConnectionDetails = getConnectionDetails.Entity;
 
             // Using the full namespace here to help avoid potential confusion between the normal and voice gateway event sets.
             API.Abstractions.Gateway.Events.IVoiceStateUpdate voiceState = getConnectionDetails.Entity.VoiceState;
@@ -319,7 +410,7 @@ namespace Remora.Discord.Voice
                     return new VoiceGatewayError("The identification response payload from the gateway was not a ready message.", true);
                 }
 
-                _voiceServerData = ready.Data;
+                _voiceServerConnectionDetails = ready.Data;
                 break;
             }
 
@@ -337,14 +428,14 @@ namespace Remora.Discord.Voice
             CancellationToken ct
         )
         {
-            if (_connectionDetails is null)
+            if (_gatewayConnectionDetails is null)
             {
                 return new InvalidOperationError("There is no session to resume.");
             }
 
             // Using the full namespace here to help avoid potential confusion between the normal and voice gateway event sets.
-            API.Abstractions.Gateway.Events.IVoiceStateUpdate voiceState = _connectionDetails.VoiceState;
-            API.Abstractions.Gateway.Events.IVoiceServerUpdate voiceServer = _connectionDetails.VoiceServer;
+            API.Abstractions.Gateway.Events.IVoiceStateUpdate voiceState = _gatewayConnectionDetails.VoiceState;
+            API.Abstractions.Gateway.Events.IVoiceServerUpdate voiceServer = _gatewayConnectionDetails.VoiceServer;
 
             Result<Uri> constructUriResult = ConstructVoiceGatewayEndpoint(voiceServer.Endpoint!);
             if (!constructUriResult.IsDefined())

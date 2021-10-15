@@ -166,16 +166,18 @@ namespace Remora.Discord.Voice
                 Result connectResult = await InitialConnectionAsync(_connectionRequestParameters, ct).ConfigureAwait(false);
                 if (!connectResult.IsSuccess)
                 {
+                    await CleanupAsync().ConfigureAwait(false);
                     return connectResult;
                 }
 
+                _receiveTask = GatewayReceiverAsync(_disconnectRequestedSource.Token);
                 _runLoopTask = RunnerAsync(_connectionRequestParameters, _disconnectRequestedSource.Token);
 
                 return Result.FromSuccess();
             }
             catch (Exception ex)
             {
-                // TODO: Cleanup
+                await CleanupAsync().ConfigureAwait(false);
                 return ex;
             }
         }
@@ -194,7 +196,6 @@ namespace Remora.Discord.Voice
                     return new InvalidOperationError("Already stopped.");
                 }
 
-                ConnectionStatus = GatewayConnectionStatus.Offline;
                 if (!_disconnectRequestedSource.IsCancellationRequested)
                 {
                     _disconnectRequestedSource.Cancel();
@@ -212,6 +213,12 @@ namespace Remora.Discord.Voice
                     return sendTaskResult;
                 }
 
+                Result receiveTaskResult = await _receiveTask.ConfigureAwait(false);
+                if (!receiveTaskResult.IsSuccess)
+                {
+                    return receiveTaskResult;
+                }
+
                 Result runLoopTaskResult = await _runLoopTask.ConfigureAwait(false);
                 if (!runLoopTaskResult.IsSuccess)
                 {
@@ -226,14 +233,7 @@ namespace Remora.Discord.Voice
             }
             finally
             {
-                _disconnectRequestedSource.Dispose();
-                _sendTask.Dispose();
-                _runLoopTask.Dispose();
-
-                if (_connectionRequestParameters is not null)
-                {
-                    SendDisconnectVoiceStateUpdate(_connectionRequestParameters.GuildID);
-                }
+                await CleanupAsync().ConfigureAwait(false);
             }
         }
 
@@ -246,6 +246,37 @@ namespace Remora.Discord.Voice
         {
             VoicePayload<TCommand> payload = new(command);
             _payloadsToSend.Enqueue(payload);
+        }
+
+        /// <summary>
+        /// Restores the client to a near pre-startup state, intended for when the client is stopping or has encountered a fatal error.
+        /// </summary>
+        /// <remarks>
+        /// The payload queues are not cleared by this operation.
+        /// </remarks>
+        /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
+        private async Task CleanupAsync()
+        {
+            if (_connectionRequestParameters is not null)
+            {
+                SendDisconnectVoiceStateUpdate(_connectionRequestParameters.GuildID);
+            }
+
+            if (!_disconnectRequestedSource.IsCancellationRequested)
+            {
+                _disconnectRequestedSource.Cancel();
+            }
+
+            await Task.WhenAll(_sendTask, _receiveTask, _runLoopTask).ConfigureAwait(false);
+
+            _disconnectRequestedSource.Dispose();
+            _disconnectRequestedSource = new CancellationTokenSource();
+
+            _connectionRequestParameters = null;
+            _gatewayConnectionDetails = null;
+            _voiceServerConnectionDetails = null;
+
+            ConnectionStatus = GatewayConnectionStatus.Offline;
         }
 
         /// <summary>
@@ -329,7 +360,7 @@ namespace Remora.Discord.Voice
             }
             finally
             {
-                // TODO: Cleanup
+                await CleanupAsync().ConfigureAwait(false);
             }
         }
 

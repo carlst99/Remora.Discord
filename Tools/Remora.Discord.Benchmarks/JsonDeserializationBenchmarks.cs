@@ -35,7 +35,7 @@ using Remora.Discord.Benchmarks.Data;
 namespace Remora.Discord.Benchmarks
 {
     [MemoryDiagnoser]
-    public class JsonSerializationBenchmarks
+    public class JsonDeserializationBenchmarks
     {
         private const int MaxPayloadSize = 4096;
 
@@ -43,7 +43,7 @@ namespace Remora.Discord.Benchmarks
         private readonly ReadOnlySequence<byte> _sequence;
         private readonly ReadOnlyMemory<byte> _memory;
 
-        public JsonSerializationBenchmarks()
+        public JsonDeserializationBenchmarks()
         {
             List<ReadOnlyMemory<byte>> dataBlocks = new();
 

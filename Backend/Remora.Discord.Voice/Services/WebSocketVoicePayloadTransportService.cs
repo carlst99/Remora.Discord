@@ -141,14 +141,9 @@ namespace Remora.Discord.Voice.Services
         /// <inheritdoc />
         public async ValueTask<Result> SendPayloadAsync<TPayload>(TPayload payload, CancellationToken ct = default) where TPayload : IVoicePayload
         {
-            if (_clientWebSocket is null)
+            if (_clientWebSocket?.State is not WebSocketState.Open)
             {
                 return new InvalidOperationError("The transport service is not connected.");
-            }
-
-            if (_clientWebSocket.State is not WebSocketState.Open)
-            {
-                return new InvalidOperationError("The socket is not open.");
             }
 
             try

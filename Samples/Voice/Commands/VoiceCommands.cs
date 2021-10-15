@@ -29,6 +29,7 @@ using Remora.Discord.Commands.Conditions;
 using Remora.Discord.Commands.Contexts;
 using Remora.Discord.Commands.Feedback.Services;
 using Remora.Discord.Voice;
+using Remora.Discord.Voice.Interop;
 using Remora.Results;
 
 namespace Remora.Discord.Samples.Caching.Commands
@@ -107,6 +108,16 @@ namespace Remora.Discord.Samples.Caching.Commands
             }
 
             return await _feedbackService.SendContextualSuccessAsync("Disconnected!", ct: CancellationToken);
+        }
+
+        /// <summary>
+        /// Gets the version of the underlying sodium library.
+        /// </summary>
+        /// <returns>A result representing the outcome of the operation.</returns>
+        [Command("sodium-version")]
+        public async Task<IResult> SodiumVersionCommandAsync()
+        {
+            return await _feedbackService.SendContextualInfoAsync(Sodium.GetVersionString() ?? "Unknown version.");
         }
     }
 }

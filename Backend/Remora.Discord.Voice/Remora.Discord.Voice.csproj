@@ -14,6 +14,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <PackageReference Include="libsodium" Version="1.0.18.1" />
       <PackageReference Include="Microsoft.IO.RecyclableMemoryStream" Version="2.2.0" />
       <PackageReference Include="System.IO.Pipelines" Version="5.0.1" />
     </ItemGroup>

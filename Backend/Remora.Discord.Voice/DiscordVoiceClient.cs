@@ -76,6 +76,7 @@ namespace Remora.Discord.Voice
 
         private Task<Result> _runLoopTask;
         private Task<Result> _sendTask;
+        private Task<Result> _receiveTask;
 
         private UpdateVoiceState? _connectionRequestParameters;
         private VoiceConnectionEstablishmentDetails? _gatewayConnectionDetails;
@@ -116,6 +117,7 @@ namespace Remora.Discord.Voice
             _disconnectRequestedSource = new CancellationTokenSource();
             _runLoopTask = Task.FromResult(Result.FromSuccess());
             _sendTask = Task.FromResult(Result.FromSuccess());
+            _receiveTask = Task.FromResult(Result.FromSuccess());
 
             ConnectionStatus = GatewayConnectionStatus.Offline;
         }
@@ -173,6 +175,7 @@ namespace Remora.Discord.Voice
             }
             catch (Exception ex)
             {
+                // TODO: Cleanup
                 return ex;
             }
         }
@@ -272,7 +275,7 @@ namespace Remora.Discord.Voice
                             }
                             Console.WriteLine("Connection succeeded");
 
-                            // TODO: Setup receive task
+                            _receiveTask = GatewayReceiverAsync(_disconnectRequestedSource.Token);
                             break;
                         case GatewayConnectionStatus.Disconnected:
                             Console.WriteLine("Resuming");
@@ -283,7 +286,7 @@ namespace Remora.Discord.Voice
                             }
                             Console.WriteLine("Resume succeeded");
 
-                            // TODO: Setup receive task
+                            _receiveTask = GatewayReceiverAsync(_disconnectRequestedSource.Token);
                             break;
                         case GatewayConnectionStatus.Connected:
                             if (_sendTask.IsCompleted)
@@ -294,6 +297,16 @@ namespace Remora.Discord.Voice
                                 if (!sendTaskResult.IsSuccess)
                                 {
                                     return sendTaskResult;
+                                }
+                            }
+
+                            if (_receiveTask.IsCompleted)
+                            {
+                                Console.WriteLine("Receive task failed.");
+                                Result receiveTaskResult = await _receiveTask.ConfigureAwait(false);
+                                if (!receiveTaskResult.IsSuccess)
+                                {
+                                    return receiveTaskResult;
                                 }
                             }
 
@@ -314,11 +327,15 @@ namespace Remora.Discord.Voice
             {
                 return ex;
             }
+            finally
+            {
+                // TODO: Cleanup
+            }
         }
 
         /// <summary>
         /// Performs the initial handshake logic to connect with the voice gateway.
-        /// Calls <see cref="ConnectAndBeginSending(Uri, CancellationToken)"/>.
+        /// Calls <see cref="ConnectToGatewayAndBeginSendTask(Uri, CancellationToken)"/>.
         /// </summary>
         /// <param name="connectionParameters">The connection parameters.</param>
         /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
@@ -360,7 +377,7 @@ namespace Remora.Discord.Voice
             }
 
             // Connect the websocket and start the send task
-            Result webSocketConnectionResult = await ConnectAndBeginSending
+            Result webSocketConnectionResult = await ConnectToGatewayAndBeginSendTask
             (
                 constructUriResult.Entity,
                 ct
@@ -389,7 +406,6 @@ namespace Remora.Discord.Voice
                     return new VoiceGatewayError("Operation was cancelled.", true);
                 }
 
-                // TODO: Dispatch
                 Result<IVoicePayload> readyPayload = await _transportService.ReceivePayloadAsync(ct).ConfigureAwait(false);
                 if (!readyPayload.IsDefined())
                 {
@@ -410,7 +426,9 @@ namespace Remora.Discord.Voice
                     return new VoiceGatewayError("The identification response payload from the gateway was not a ready message.", true);
                 }
 
+                _receivedPayloads.Enqueue(ready);
                 _voiceServerConnectionDetails = ready.Data;
+
                 break;
             }
 
@@ -420,13 +438,11 @@ namespace Remora.Discord.Voice
 
         /// <summary>
         /// Resumes an existing session with the voice gateway, replaying missed events.
+        /// Calls <see cref="ConnectToGatewayAndBeginSendTask(Uri, CancellationToken)"/>.
         /// </summary>
         /// <param name="ct">A <see cref="CancellationToken"/>.</param>
         /// <returns>A connection result which may or may not have succeeded.</returns>
-        private async Task<Result> ResumeConnectionAsync
-        (
-            CancellationToken ct
-        )
+        private async Task<Result> ResumeConnectionAsync(CancellationToken ct)
         {
             if (_gatewayConnectionDetails is null)
             {
@@ -444,7 +460,7 @@ namespace Remora.Discord.Voice
             }
 
             // Connect the websocket and start the send task
-            Result webSocketConnectionResult = await ConnectAndBeginSending
+            Result webSocketConnectionResult = await ConnectToGatewayAndBeginSendTask
             (
                 constructUriResult.Entity,
                 ct
@@ -501,8 +517,6 @@ namespace Remora.Discord.Voice
                     case IVoicePayload<IVoiceHeartbeatAcknowledge>:
                             continue;
                     case IVoicePayload<IVoiceResumed>:
-                            // TODO: Dispatch
-                            // UnwrapAndDispatchEvent(receiveEvent.Entity, _disconnectRequestedSource.Token);
                             resuming = false;
                             break;
                 }
@@ -519,7 +533,7 @@ namespace Remora.Discord.Voice
         /// </summary>
         /// <param name="endpoint">The provided string endpoint.</param>
         /// <returns>A <see cref="Result"/> representing the outcome of the operation.</returns>
-        private Result<Uri> ConstructVoiceGatewayEndpoint(string endpoint)
+        private static Result<Uri> ConstructVoiceGatewayEndpoint(string endpoint)
         {
             endpoint = $"wss://{endpoint}?v=4";
             if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var gatewayUri))
@@ -540,7 +554,7 @@ namespace Remora.Discord.Voice
         /// <param name="gatewayUri">The URI of the voice gateway.</param>
         /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
         /// <returns>A <see cref="Result"/> indicating the outcome of the operation.</returns>
-        private async Task<Result> ConnectAndBeginSending
+        private async Task<Result> ConnectToGatewayAndBeginSendTask
         (
             Uri gatewayUri,
             CancellationToken ct
@@ -569,18 +583,19 @@ namespace Remora.Discord.Voice
 
             _heartbeatData.Interval = hello.Data.HeartbeatInterval;
             _heartbeatData.LastSentTime = DateTimeOffset.UtcNow;
+            _receivedPayloads.Enqueue(hello);
             _sendTask = GatewaySenderAsync(_disconnectRequestedSource.Token);
 
             return Result.FromSuccess();
         }
 
         /// <summary>
-        /// This method acts as the main entrypoint for the gateway sender task. It processes payloads that are
-        /// submitted by the application to the gateway, sending them to it.
+        /// This method acts as the main entrypoint for the gateway sender task.
+        /// It processes and sends submitted payloads to the gateway, and calls <see cref="SendHeartbeatAsync(CancellationToken)"/>.
         /// </summary>
         /// <param name="ct">A token for requests to disconnect the socket.</param>
         /// <returns>
-        /// A sender result which may or may not have been successful. A failed result indicates that something
+        /// A result which may or may not have been successful. A failed result indicates that something
         /// has gone wrong when sending a payload, and that the connection has been deemed nonviable. A nonviable
         /// connection should be either terminated, reestablished, or resumed as appropriate.
         /// </returns>
@@ -607,7 +622,7 @@ namespace Remora.Discord.Voice
                         continue;
                     }
 
-                    var sendResult = await _transportService.SendPayloadAsync(payload, ct).ConfigureAwait(false);
+                    Result sendResult = await _transportService.SendPayloadAsync(payload, ct).ConfigureAwait(false);
                     if (sendResult.IsSuccess)
                     {
                         continue;
@@ -617,6 +632,60 @@ namespace Remora.Discord.Voice
                     return sendResult.Error is VoiceGatewayWebSocketError { CloseStatus: System.Net.WebSockets.WebSocketCloseStatus.NormalClosure }
                         ? Result.FromSuccess()
                         : sendResult;
+                }
+
+                return Result.FromSuccess();
+            }
+            catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+            {
+                return Result.FromSuccess();
+            }
+            catch (Exception ex)
+            {
+                return ex;
+            }
+        }
+
+        /// <summary>
+        /// This method acts as the main entrypoint for the gateway receiver task. It receives and processes payloads from the gateway.
+        /// </summary>
+        /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
+        /// <returns>
+        /// A receiver result which may or may not have been successful. A failed result indicates that
+        /// something has gone wrong when receiving a payload, and that the connection has been deemed nonviable. A
+        /// nonviable connection should be either terminated, reestablished, or resumed as appropriate.
+        /// </returns>
+        private async Task<Result> GatewayReceiverAsync(CancellationToken ct)
+        {
+            await Task.Yield();
+
+            try
+            {
+                while (!ct.IsCancellationRequested)
+                {
+                    Result<IVoicePayload> receiveResult = await _transportService.ReceivePayloadAsync(ct).ConfigureAwait(false);
+
+                    if (!receiveResult.IsSuccess)
+                    {
+                        // Normal closures are okay
+                        return receiveResult.Error is VoiceGatewayWebSocketError { CloseStatus: System.Net.WebSockets.WebSocketCloseStatus.NormalClosure }
+                            ? Result.FromSuccess()
+                            : Result.FromError(receiveResult);
+                    }
+
+                    // Update the ack timestamp
+                    if (receiveResult.Entity is IVoicePayload<IVoiceHeartbeatAcknowledge> heartbeatAck)
+                    {
+                        if (!long.TryParse(heartbeatAck.Data.Nonce, out long nonce))
+                        {
+                            return new VoiceGatewayError("The heartbeat acknowledgement payload did not carry a valid nonce.", false);
+                        }
+
+                        _heartbeatData.LastReceivedAckTime = DateTime.UtcNow;
+                        _heartbeatData.LastReceivedNonce = long.Parse(heartbeatAck.Data.Nonce);
+                    }
+
+                    _receivedPayloads.Enqueue(receiveResult.Entity);
                 }
 
                 return Result.FromSuccess();

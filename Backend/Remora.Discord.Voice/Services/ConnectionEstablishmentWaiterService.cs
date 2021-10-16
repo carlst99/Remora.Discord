@@ -39,11 +39,6 @@ namespace Remora.Discord.Voice.Services
     /// <inheritdoc cref="IConnectionEstablishmentWaiterService"/>
     internal sealed class ConnectionEstablishmentWaiterService : IConnectionEstablishmentWaiterService
     {
-        /// <summary>
-        /// Defines the amount of time in milliseconds before a connection waiter times out.
-        /// </summary>
-        public const int ConnectionWaitTimeoutMS = 5000;
-
         private readonly IDiscordRestUserAPI _userAPI;
         private readonly HashSet<Snowflake> _pendingRequests;
         private readonly ConcurrentDictionary<Snowflake, IVoiceStateUpdate> _stateUpdates;
@@ -66,6 +61,12 @@ namespace Remora.Discord.Voice.Services
         {
             if (!_pendingRequests.Contains(voiceServerUpdate.GuildID))
             {
+                return;
+            }
+
+            if (voiceServerUpdate.Endpoint is null)
+            {
+                // The server endpoint should come in the next update.
                 return;
             }
 
@@ -99,7 +100,12 @@ namespace Remora.Discord.Voice.Services
         }
 
         /// <inheritdoc />
-        public async Task<Result<VoiceConnectionEstablishmentDetails>> WaitForRequestConfirmation(Snowflake guildID, CancellationToken ct = default)
+        public async Task<Result<VoiceConnectionEstablishmentDetails>> WaitForRequestConfirmation
+        (
+            Snowflake guildID,
+            int timeoutMilliseconds = 5000,
+            CancellationToken ct = default
+        )
         {
             if (_pendingRequests.Contains(guildID))
             {
@@ -111,7 +117,7 @@ namespace Remora.Discord.Voice.Services
 
             while (!ct.IsCancellationRequested)
             {
-                if (requestWaitBeganAt.AddMilliseconds(ConnectionWaitTimeoutMS) < DateTimeOffset.UtcNow)
+                if (requestWaitBeganAt.AddMilliseconds(timeoutMilliseconds) < DateTimeOffset.UtcNow)
                 {
                     return new VoiceRequestTimeoutError();
                 }

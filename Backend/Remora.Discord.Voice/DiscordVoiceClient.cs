@@ -35,6 +35,7 @@ using Remora.Discord.Voice.Abstractions.Objects;
 using Remora.Discord.Voice.Abstractions.Objects.Commands;
 using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Objects.Events.Heartbeats;
+using Remora.Discord.Voice.Abstractions.Objects.UdpDataProtocol.Incoming;
 using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Errors;
 using Remora.Discord.Voice.Objects;
@@ -55,6 +56,7 @@ namespace Remora.Discord.Voice
         private readonly DiscordVoiceClientOptions _clientOptions;
         private readonly IConnectionEstablishmentWaiterService _connectionWaiterService;
         private readonly IVoicePayloadTransportService _transportService;
+        private readonly IVoiceDataTranportService _dataService;
         private readonly Random _random;
 
         /// <summary>
@@ -98,6 +100,7 @@ namespace Remora.Discord.Voice
         /// <param name="clientOptions">The client options to use.</param>
         /// <param name="connectionWaiterService">The connection waiter service.</param>
         /// <param name="transportService">The voice payload transport service.</param>
+        /// <param name="dataService">The voice data transport service.</param>
         /// <param name="random">A random number generator.</param>
         public DiscordVoiceClient
         (
@@ -106,6 +109,7 @@ namespace Remora.Discord.Voice
             IOptions<DiscordVoiceClientOptions> clientOptions,
             IConnectionEstablishmentWaiterService connectionWaiterService,
             IVoicePayloadTransportService transportService,
+            IVoiceDataTranportService dataService,
             Random random
         )
         {
@@ -114,6 +118,7 @@ namespace Remora.Discord.Voice
             _clientOptions = clientOptions.Value;
             _connectionWaiterService = connectionWaiterService;
             _transportService = transportService;
+            _dataService = dataService;
             _random = random;
 
             _heartbeatData = new HeartbeatData();
@@ -171,14 +176,13 @@ namespace Remora.Discord.Voice
                 _disconnectRequestedSource.Dispose();
                 _disconnectRequestedSource = new CancellationTokenSource();
 
-                Result connectResult = await InitialConnectionAsync(_connectionRequestParameters, ct).ConfigureAwait(false);
-                if (!connectResult.IsSuccess)
+                Result connectionResult = await ConnectAsync(_connectionRequestParameters, ct).ConfigureAwait(false);
+                if (!connectionResult.IsSuccess)
                 {
                     await CleanupAsync().ConfigureAwait(false);
-                    return connectResult;
+                    return connectionResult;
                 }
 
-                _receiveTask = GatewayReceiverAsync(_disconnectRequestedSource.Token);
                 _runLoopTask = RunnerAsync(_connectionRequestParameters, _disconnectRequestedSource.Token);
 
                 return Result.FromSuccess();
@@ -277,26 +281,12 @@ namespace Remora.Discord.Voice
                     switch (ConnectionStatus)
                     {
                         case GatewayConnectionStatus.Offline:
-                            Console.WriteLine("Connecting");
-                            Result initialConnectionResult = await InitialConnectionAsync(connectionParameters, ct).ConfigureAwait(false);
-                            if (!initialConnectionResult.IsSuccess)
-                            {
-                                return initialConnectionResult;
-                            }
-                            Console.WriteLine("Connection succeeded");
-
-                            _receiveTask = GatewayReceiverAsync(_disconnectRequestedSource.Token);
-                            break;
                         case GatewayConnectionStatus.Disconnected:
-                            Console.WriteLine("Resuming");
-                            Result resumeConnectionResult = await ResumeConnectionAsync(ct).ConfigureAwait(false);
-                            if (!resumeConnectionResult.IsSuccess)
+                            Result connectionResult = await ConnectAsync(connectionParameters, ct).ConfigureAwait(false);
+                            if (!connectionResult.IsSuccess)
                             {
-                                return resumeConnectionResult;
+                                return connectionResult;
                             }
-                            Console.WriteLine("Resume succeeded");
-
-                            _receiveTask = GatewayReceiverAsync(_disconnectRequestedSource.Token);
                             break;
                         case GatewayConnectionStatus.Connected:
                             if (_sendTask.IsCompleted)
@@ -331,7 +321,7 @@ namespace Remora.Discord.Voice
             }
             catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
             {
-                Result disconnectResult = await _transportService.DisconnectAsync(false).ConfigureAwait(false);
+                Result disconnectResult = await _transportService.DisconnectAsync(false, ct).ConfigureAwait(false);
                 if (!disconnectResult.IsSuccess)
                 {
                     return disconnectResult;
@@ -345,13 +335,60 @@ namespace Remora.Discord.Voice
             }
             finally
             {
-                await _transportService.DisconnectAsync(false).ConfigureAwait(false);
+                await _transportService.DisconnectAsync(false, ct).ConfigureAwait(false);
 
                 if (_connectionRequestParameters is not null)
                 {
                     SendDisconnectVoiceStateUpdate(_connectionRequestParameters.GuildID);
                 }
             }
+        }
+
+        /// <summary>
+        /// Attempts to connect to the voice gateway and server.
+        /// </summary>
+        /// <param name="connectionParameters">The connection parameters.</param>
+        /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
+        /// <returns>A result representing the outcome of the operation.</returns>
+        private async Task<Result> ConnectAsync
+        (
+            UpdateVoiceState connectionParameters,
+            CancellationToken ct
+        )
+        {
+            switch (ConnectionStatus)
+            {
+                case GatewayConnectionStatus.Offline:
+                    Result initialConnectResult = await InitialConnectionAsync(connectionParameters, ct).ConfigureAwait(false);
+                    if (!initialConnectResult.IsSuccess)
+                    {
+                        return initialConnectResult;
+                    }
+                    break;
+                case GatewayConnectionStatus.Disconnected:
+                    Result resumeResult = await ResumeConnectionAsync(ct).ConfigureAwait(false);
+                    if (!resumeResult.IsSuccess)
+                    {
+                        return resumeResult;
+                    }
+                    break;
+            }
+
+            _receiveTask = GatewayReceiverAsync(_disconnectRequestedSource.Token);
+
+            Result<IIPDiscoveryResponse> voiceServerConnectResult = await _dataService.ConnectAsync
+            (
+                _voiceServerConnectionDetails!,
+                ct
+            ).ConfigureAwait(false);
+
+            if (!voiceServerConnectResult.IsSuccess)
+            {
+                return Result.FromError(voiceServerConnectResult);
+            }
+
+            // TODO: Select protocol
+            return Result.FromSuccess();
         }
 
         /// <summary>
@@ -372,7 +409,7 @@ namespace Remora.Discord.Voice
             Result<VoiceConnectionEstablishmentDetails> getConnectionDetails = await _connectionWaiterService.WaitForRequestConfirmation
             (
                 connectionParameters.GuildID,
-                ct
+                ct: ct
             ).ConfigureAwait(false);
 
             if (!getConnectionDetails.IsDefined())

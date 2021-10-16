@@ -72,6 +72,8 @@ namespace Remora.Discord.Voice.Json
 
             var operationCode = JsonSerializer.Deserialize<VoiceOperationCode>(operationCodeProperty.GetRawText(), options);
 
+            // Camera broadcast.
+            // TODO: Define packet for this.
             if (operationCode == (VoiceOperationCode)12)
             {
                 System.Diagnostics.Debug.WriteLine(document.RootElement.GetRawText());

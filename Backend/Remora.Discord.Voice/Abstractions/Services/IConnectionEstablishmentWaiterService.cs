@@ -40,9 +40,15 @@ namespace Remora.Discord.Voice.Abstractions.Services
         /// Waits for confirmation of a voice connection request.
         /// </summary>
         /// <param name="guildID">The ID of the guild that a voice request has been made for.</param>
+        /// <param name="timeoutMilliseconds">Defines the amount of time in milliseconds before the wait operation times out.</param>
         /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
         /// <returns>A result indicating if the request was successfully confirmed.</returns>
-        Task<Result<VoiceConnectionEstablishmentDetails>> WaitForRequestConfirmation(Snowflake guildID, CancellationToken ct = default);
+        Task<Result<VoiceConnectionEstablishmentDetails>> WaitForRequestConfirmation
+        (
+            Snowflake guildID,
+            int timeoutMilliseconds = 5000,
+            CancellationToken ct = default
+        );
 
         /// <summary>
         /// Submits a voice state update event that may or may not be in response to a voice connection request.
@@ -50,7 +56,11 @@ namespace Remora.Discord.Voice.Abstractions.Services
         /// <param name="voiceStateUpdate">The voice state udpate event.</param>
         /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
-        Task<Result> SubmitVoiceStateUpdate(IVoiceStateUpdate voiceStateUpdate, CancellationToken ct = default);
+        Task<Result> SubmitVoiceStateUpdate
+        (
+            IVoiceStateUpdate voiceStateUpdate,
+            CancellationToken ct = default
+        );
 
         /// <summary>
         /// Submits a voice server update event that is in response to a voice connection request.

@@ -70,6 +70,7 @@ namespace Remora.Discord.Voice
                 _services.GetRequiredService<IOptions<DiscordVoiceClientOptions>>(),
                 _services.GetRequiredService<IConnectionEstablishmentWaiterService>(),
                 _services.GetRequiredService<IVoicePayloadTransportService>(),
+                _services.GetRequiredService<IVoiceDataTranportService>(),
                 _services.GetRequiredService<Random>()
             );
 

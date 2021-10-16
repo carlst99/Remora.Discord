@@ -81,7 +81,7 @@ namespace Remora.Discord.Voice.Objects
         /// </remarks>
         public long LastSentNonce { get; set; }
 
-        private DateTimeOffset? GetTime(ref long container)
+        private static DateTimeOffset? GetTime(ref long container)
         {
             long value = Interlocked.Read(ref container);
             return value > 0
@@ -89,7 +89,7 @@ namespace Remora.Discord.Voice.Objects
                 : null;
         }
 
-        private void SetTime(ref long container, DateTimeOffset? value)
+        private static void SetTime(ref long container, DateTimeOffset? value)
         {
             if (value is null)
             {

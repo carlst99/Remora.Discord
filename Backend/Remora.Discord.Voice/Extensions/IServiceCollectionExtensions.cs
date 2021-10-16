@@ -70,7 +70,7 @@ namespace Remora.Discord.Voice.Extensions
         {
             serviceCollection.TryAddSingleton<RecyclableMemoryStreamManager>();
             serviceCollection.TryAddTransient<IVoicePayloadTransportService, WebSocketVoicePayloadTransportService>();
-
+            serviceCollection.TryAddTransient<IVoiceDataTranportService, UdpVoiceDataTransportService>();
             serviceCollection.TryAddSingleton<IConnectionEstablishmentWaiterService, ConnectionEstablishmentWaiterService>();
             serviceCollection.TryAddSingleton<DiscordVoiceClientFactory>();
 

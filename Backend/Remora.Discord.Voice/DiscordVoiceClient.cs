@@ -35,12 +35,14 @@ using Remora.Discord.Voice.Abstractions.Objects;
 using Remora.Discord.Voice.Abstractions.Objects.Commands;
 using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Objects.Events.Heartbeats;
+using Remora.Discord.Voice.Abstractions.Objects.Events.Sessions;
 using Remora.Discord.Voice.Abstractions.Objects.UdpDataProtocol.Incoming;
 using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Errors;
 using Remora.Discord.Voice.Objects;
 using Remora.Discord.Voice.Objects.Commands.ConnectingResuming;
 using Remora.Discord.Voice.Objects.Commands.Heartbeats;
+using Remora.Discord.Voice.Objects.Commands.Protocols;
 using Remora.Results;
 
 namespace Remora.Discord.Voice
@@ -374,8 +376,6 @@ namespace Remora.Discord.Voice
                     break;
             }
 
-            _receiveTask = GatewayReceiverAsync(_disconnectRequestedSource.Token);
-
             Result<IIPDiscoveryResponse> voiceServerConnectResult = await _dataService.ConnectAsync
             (
                 _voiceServerConnectionDetails!,
@@ -387,7 +387,57 @@ namespace Remora.Discord.Voice
                 return Result.FromError(voiceServerConnectResult);
             }
 
-            // TODO: Select protocol
+            VoiceSelectProtocol selectProtocol = new
+            (
+                "udp",
+                new VoiceProtocolData
+                (
+                    voiceServerConnectResult.Entity.Address.TrimEnd('\0'),
+                    voiceServerConnectResult.Entity.Port,
+                    "xsalsa20_poly1305" // TODO: Perhaps this shouldn't be hardcoded?
+                )
+            );
+            EnqueueCommand(selectProtocol);
+
+            DateTimeOffset startedWaitingForSessionDescription = DateTimeOffset.UtcNow;
+            while (true)
+            {
+                if (ct.IsCancellationRequested)
+                {
+                    return new VoiceGatewayError("Operation was cancelled.", true);
+                }
+
+                Result<IVoicePayload> sessionDescriptionPayload = await _transportService.ReceivePayloadAsync(ct).ConfigureAwait(false);
+                if (!sessionDescriptionPayload.IsDefined())
+                {
+                    return Result.FromError
+                    (
+                        new VoiceGatewayError("Failed to receive session description payload", true),
+                        sessionDescriptionPayload
+                    );
+                }
+
+                if (sessionDescriptionPayload.Entity is not IVoicePayload<IVoiceSessionDescription> sessionDescription)
+                {
+                    if (startedWaitingForSessionDescription.AddSeconds(2) < DateTimeOffset.UtcNow)
+                    {
+                        return new VoiceGatewayError("Did not receive a session description payload.", true);
+                    }
+
+                    if (sessionDescriptionPayload.Entity is not IVoicePayload<IVoiceHeartbeatAcknowledge>)
+                    {
+                        _receivedPayloads.Enqueue(sessionDescriptionPayload.Entity);
+                    }
+
+                    continue;
+                }
+
+                _receivedPayloads.Enqueue(sessionDescription);
+
+                break;
+            }
+
+            _receiveTask = GatewayReceiverAsync(_disconnectRequestedSource.Token);
             return Result.FromSuccess();
         }
 
@@ -550,7 +600,7 @@ namespace Remora.Discord.Voice
 
                 var receiveEvent = await _transportService.ReceivePayloadAsync(ct).ConfigureAwait(false);
 
-                if (!receiveEvent.IsSuccess)
+                if (!receiveEvent.IsDefined())
                 {
                     if (receiveEvent.Error is VoiceGatewayDiscordError)
                     {

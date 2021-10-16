@@ -97,7 +97,7 @@ namespace Remora.Discord.Samples.Caching.Commands
         {
             DiscordVoiceClient client = _voiceClientFactory.Get(_context.GuildID.Value);
 
-            Result stopResult = await client.StopAsync(CancellationToken).ConfigureAwait(false);
+            Result stopResult = await client.StopAsync().ConfigureAwait(false);
             if (!stopResult.IsSuccess)
             {
                 return await _feedbackService.SendContextualErrorAsync

@@ -20,6 +20,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+using JetBrains.Annotations;
 using Remora.Discord.API.Abstractions.Gateway.Events;
 
 namespace Remora.Discord.Voice.Objects
@@ -29,6 +30,7 @@ namespace Remora.Discord.Voice.Objects
     /// </summary>
     /// <param name="VoiceState">The voice state.</param>
     /// <param name="VoiceServer">The voice server.</param>
+    [PublicAPI]
     public record VoiceConnectionEstablishmentDetails
     (
         IVoiceStateUpdate VoiceState,

@@ -22,9 +22,11 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Tasks;
 using JetBrains.Annotations;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Remora.Discord.API.Gateway.Commands;
 using Remora.Discord.Core;
@@ -48,6 +50,7 @@ namespace Remora.Discord.Voice
     [PublicAPI]
     public sealed class DiscordVoiceClient
     {
+        private readonly ILogger<DiscordVoiceClient> _logger;
         private readonly DiscordGatewayClient _gatewayClient;
         private readonly DiscordVoiceClientOptions _clientOptions;
         private readonly IConnectionEstablishmentWaiterService _connectionWaiterService;
@@ -90,6 +93,7 @@ namespace Remora.Discord.Voice
         /// <summary>
         /// Initializes a new instance of the <see cref="DiscordVoiceClient"/> class.
         /// </summary>
+        /// <param name="logger">The logging interface.</param>
         /// <param name="gatewayClient">The gateway client.</param>
         /// <param name="clientOptions">The client options to use.</param>
         /// <param name="connectionWaiterService">The connection waiter service.</param>
@@ -97,6 +101,7 @@ namespace Remora.Discord.Voice
         /// <param name="random">A random number generator.</param>
         public DiscordVoiceClient
         (
+            ILogger<DiscordVoiceClient> logger,
             DiscordGatewayClient gatewayClient,
             IOptions<DiscordVoiceClientOptions> clientOptions,
             IConnectionEstablishmentWaiterService connectionWaiterService,
@@ -104,6 +109,7 @@ namespace Remora.Discord.Voice
             Random random
         )
         {
+            _logger = logger;
             _gatewayClient = gatewayClient;
             _clientOptions = clientOptions.Value;
             _connectionWaiterService = connectionWaiterService;
@@ -161,6 +167,8 @@ namespace Remora.Discord.Voice
                     isSelfDeafened,
                     channelID
                 );
+
+                _disconnectRequestedSource.Dispose();
                 _disconnectRequestedSource = new CancellationTokenSource();
 
                 Result connectResult = await InitialConnectionAsync(_connectionRequestParameters, ct).ConfigureAwait(false);
@@ -185,9 +193,8 @@ namespace Remora.Discord.Voice
         /// <summary>
         /// Stops the voice client.
         /// </summary>
-        /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
         /// <returns>A <see cref="Result"/> representing the outcome of the operation.</returns>
-        public async Task<Result> StopAsync(CancellationToken ct = default)
+        public async Task<Result> StopAsync()
         {
             try
             {
@@ -196,28 +203,7 @@ namespace Remora.Discord.Voice
                     return new InvalidOperationError("Already stopped.");
                 }
 
-                if (!_disconnectRequestedSource.IsCancellationRequested)
-                {
-                    _disconnectRequestedSource.Cancel();
-                }
-
-                Result disconnectResult = await _transportService.DisconnectAsync(false, ct).ConfigureAwait(false);
-                if (!disconnectResult.IsSuccess)
-                {
-                    return disconnectResult;
-                }
-
-                Result sendTaskResult = await _sendTask.ConfigureAwait(false);
-                if (!sendTaskResult.IsSuccess)
-                {
-                    return sendTaskResult;
-                }
-
-                Result receiveTaskResult = await _receiveTask.ConfigureAwait(false);
-                if (!receiveTaskResult.IsSuccess)
-                {
-                    return receiveTaskResult;
-                }
+                await CleanupAsync().ConfigureAwait(false);
 
                 Result runLoopTaskResult = await _runLoopTask.ConfigureAwait(false);
                 if (!runLoopTaskResult.IsSuccess)
@@ -230,10 +216,6 @@ namespace Remora.Discord.Voice
             catch (Exception ex)
             {
                 return ex;
-            }
-            finally
-            {
-                await CleanupAsync().ConfigureAwait(false);
             }
         }
 
@@ -257,11 +239,6 @@ namespace Remora.Discord.Voice
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         private async Task CleanupAsync()
         {
-            if (_connectionRequestParameters is not null)
-            {
-                SendDisconnectVoiceStateUpdate(_connectionRequestParameters.GuildID);
-            }
-
             if (!_disconnectRequestedSource.IsCancellationRequested)
             {
                 _disconnectRequestedSource.Cancel();
@@ -291,6 +268,8 @@ namespace Remora.Discord.Voice
             CancellationToken ct
         )
         {
+            await Task.Yield();
+
             try
             {
                 while (!ct.IsCancellationRequested)
@@ -348,10 +327,16 @@ namespace Remora.Discord.Voice
                     }
                 }
 
-                return Result.FromSuccess();
+                throw new TaskCanceledException();
             }
             catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
             {
+                Result disconnectResult = await _transportService.DisconnectAsync(false).ConfigureAwait(false);
+                if (!disconnectResult.IsSuccess)
+                {
+                    return disconnectResult;
+                }
+
                 return Result.FromSuccess();
             }
             catch (Exception ex)
@@ -360,7 +345,12 @@ namespace Remora.Discord.Voice
             }
             finally
             {
-                await CleanupAsync().ConfigureAwait(false);
+                await _transportService.DisconnectAsync(false).ConfigureAwait(false);
+
+                if (_connectionRequestParameters is not null)
+                {
+                    SendDisconnectVoiceStateUpdate(_connectionRequestParameters.GuildID);
+                }
             }
         }
 
@@ -621,6 +611,98 @@ namespace Remora.Discord.Voice
         }
 
         /// <summary>
+        /// Gets a value indicating if the gateway connection should be re-established.
+        /// </summary>
+        /// <param name="iterationResult">The result of the last connection iteration.</param>
+        /// <param name="withNewSession">Defines whether a resume or reconnect should be attempted.</param>
+        /// <returns>A value indicating whether or not the connection should be re-established.</returns>
+        private bool ShouldReconnect
+        (
+            Result iterationResult,
+            out bool withNewSession
+        )
+        {
+            withNewSession = false;
+
+            switch (iterationResult.Error)
+            {
+                case VoiceGatewayDiscordError gde:
+                    {
+                        switch (gde.CloseStatus)
+                        {
+                            case VoiceGatewayCloseStatus.AlreadyAuthenticated:
+                            case VoiceGatewayCloseStatus.FailedToDecodePayload:
+                            case VoiceGatewayCloseStatus.UnknownEncryptionMode:
+                            case VoiceGatewayCloseStatus.UnknownProtocol:
+                            case VoiceGatewayCloseStatus.UnknownOperationCode:
+                                {
+                                    return true;
+                                }
+                            case VoiceGatewayCloseStatus.NotAuthenticated:
+                            case VoiceGatewayCloseStatus.SessionNoLongerValid:
+                            case VoiceGatewayCloseStatus.SessionTimeout:
+                            case VoiceGatewayCloseStatus.ServerNotFound:
+                            case VoiceGatewayCloseStatus.VoiceServerCrash:
+                                {
+                                    withNewSession = true;
+                                    return true;
+                                }
+                            case VoiceGatewayCloseStatus.AuthenticationFailed:
+                            case VoiceGatewayCloseStatus.Disconnected:
+                                {
+                                    return false;
+                                }
+                        }
+
+                        break;
+                    }
+                case VoiceGatewayWebSocketError gwe:
+                    {
+                        switch (gwe.CloseStatus)
+                        {
+                            case WebSocketCloseStatus.InternalServerError:
+                            case WebSocketCloseStatus.EndpointUnavailable:
+                                {
+                                    withNewSession = true;
+                                    return true;
+                                }
+                        }
+
+                        break;
+                    }
+                case VoiceGatewayError gae:
+                    {
+                        // We'll try reconnecting on non-critical internal errors
+                        return !gae.IsCritical;
+                    }
+                case ExceptionError exe:
+                    {
+                        switch (exe.Exception)
+                        {
+                            case System.Net.Http.HttpRequestException or WebSocketException:
+                                {
+                                    _logger.LogWarning
+                                    (
+                                        exe.Exception,
+                                        "Transient error in gateway client: {Exception}",
+                                        exe.Message
+                                    );
+
+                                    return true;
+                                }
+                            default:
+                                {
+                                    return false;
+                                }
+                        }
+                    }
+            }
+
+            // We don't know what happened... try reconnecting?
+            return true;
+        }
+
+        /// <summary>
         /// This method acts as the main entrypoint for the gateway sender task.
         /// It processes and sends submitted payloads to the gateway, and calls <see cref="SendHeartbeatAsync(CancellationToken)"/>.
         /// </summary>
@@ -699,7 +781,7 @@ namespace Remora.Discord.Voice
                     if (!receiveResult.IsSuccess)
                     {
                         // Normal closures are okay
-                        return receiveResult.Error is VoiceGatewayWebSocketError { CloseStatus: System.Net.WebSockets.WebSocketCloseStatus.NormalClosure }
+                        return receiveResult.Error is VoiceGatewayWebSocketError { CloseStatus: WebSocketCloseStatus.NormalClosure }
                             ? Result.FromSuccess()
                             : Result.FromError(receiveResult);
                     }
@@ -714,6 +796,8 @@ namespace Remora.Discord.Voice
 
                         _heartbeatData.LastReceivedAckTime = DateTime.UtcNow;
                         _heartbeatData.LastReceivedNonce = long.Parse(heartbeatAck.Data.Nonce);
+
+                        continue;
                     }
 
                     _receivedPayloads.Enqueue(receiveResult.Entity);

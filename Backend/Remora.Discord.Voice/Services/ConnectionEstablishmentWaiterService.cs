@@ -37,7 +37,7 @@ using Remora.Results;
 namespace Remora.Discord.Voice.Services
 {
     /// <inheritdoc cref="IConnectionEstablishmentWaiterService"/>
-    public sealed class ConnectionEstablishmentWaiterService : IConnectionEstablishmentWaiterService
+    internal sealed class ConnectionEstablishmentWaiterService : IConnectionEstablishmentWaiterService
     {
         /// <summary>
         /// Defines the amount of time in milliseconds before a connection waiter times out.

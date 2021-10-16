@@ -22,6 +22,7 @@
 
 using System.Threading;
 using System.Threading.Tasks;
+using JetBrains.Annotations;
 using Remora.Discord.API.Abstractions.Gateway.Events;
 using Remora.Discord.Core;
 using Remora.Discord.Voice.Objects;
@@ -32,6 +33,7 @@ namespace Remora.Discord.Voice.Abstractions.Services
     /// <summary>
     /// Defines an intermediary between requesting a voice connection and the gateway confirming it.
     /// </summary>
+    [PublicAPI]
     public interface IConnectionEstablishmentWaiterService
     {
         /// <summary>

@@ -28,7 +28,7 @@ namespace Remora.Discord.Voice.Objects
     /// <summary>
     /// Stores data relevant to the heartbeating process.
     /// </summary>
-    public class HeartbeatData
+    internal sealed class HeartbeatData
     {
         private long _lastReceivedAckTime;
         private long _lastReceivedNonce;

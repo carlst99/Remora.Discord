@@ -1,5 +1,5 @@
 ﻿//
-//  Sodium.cs
+//  OpusApplicationDefinition.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -20,33 +20,29 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
-using System;
-using System.Runtime.InteropServices;
 using JetBrains.Annotations;
 
-#pragma warning disable SA1300 // Element should begin with upper-case letter
-
-namespace Remora.Discord.Voice.Interop
+namespace Remora.Discord.Voice.Interop.Opus
 {
     /// <summary>
-    /// Represents an interface to the native libsodium library.
+    /// Enumerates application definitions for the reference libopus implementation.
     /// </summary>
-    public static partial class Sodium
-    {
-        private const string SodiumLibraryName = "libsodium";
-
-        [DllImport(SodiumLibraryName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr sodium_version_string();
-    }
-
     [PublicAPI]
-    public static partial class Sodium
+    public enum OpusApplicationDefinition
     {
         /// <summary>
-        /// Gets the version string of the sodium library.
+        /// Encoded audio is optimised for VoIP/videoconference applications where listening quality and intelligibility matter most.
         /// </summary>
-        /// <returns>The sodium library version.</returns>
-        public static string? GetVersionString()
-            => Marshal.PtrToStringAnsi(sodium_version_string());
+        Voip = 2048,
+
+        /// <summary>
+        /// Encoded audio is optimised for broadcast/high-fidelity application where the decoded audio should be as close as possible to the input.
+        /// </summary>
+        Audio = 2049,
+
+        /// <summary>
+        /// Encoded audio is optimised for when lowest-achievable latency is what matters most. Voice-optimized modes cannot be used.
+        /// </summary>
+        RestrictedLowDelay = 2051
     }
 }

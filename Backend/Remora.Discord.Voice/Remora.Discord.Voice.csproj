@@ -11,6 +11,7 @@
 
             This package provides a fully-featured implementation of a Discord voice gateway client.
         </Description>
+        <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
     </PropertyGroup>
 
     <ItemGroup>

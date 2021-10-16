@@ -78,7 +78,7 @@ namespace Remora.Discord.Voice.Services
                 await _client.SendAsync(ipDiscoveryBuffer, ipDiscoveryBuffer.Length).ConfigureAwait(false);
 
                 Result<UdpReceiveResult> discoveryResult = await _client.ReceiveAsync()
-                    .WithTimeout(TimeSpan.FromMilliseconds(1000))
+                    .WithTimeout(TimeSpan.FromMilliseconds(1000), ct)
                     .ConfigureAwait(false);
 
                 if (!discoveryResult.IsSuccess)

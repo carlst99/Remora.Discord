@@ -21,6 +21,7 @@
 //
 
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using JetBrains.Annotations;
@@ -51,6 +52,13 @@ namespace Remora.Discord.Voice.Abstractions.Services
         /// Gets a value indicating whether the service has successfully connected.
         /// </summary>
         bool IsConnected { get; }
+
+        /// <summary>
+        /// Selects a supported encryption mode from the provided list.
+        /// </summary>
+        /// <param name="encryptionModes">The list of encryption modes to check for support on.</param>
+        /// <returns>A result representing the outcome of the operation.</returns>
+        Result<string> SelectSupportedEncryptionMode(IReadOnlyList<string> encryptionModes);
 
         /// <summary>
         /// Connects to the transport endpoint, enabling I/O operations.

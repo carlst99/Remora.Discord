@@ -376,6 +376,12 @@ namespace Remora.Discord.Voice
                     break;
             }
 
+            Result<string> selectedEncryptionMode = _dataService.SelectSupportedEncryptionMode(_voiceServerConnectionDetails!.Modes);
+            if (!selectedEncryptionMode.IsSuccess)
+            {
+                return Result.FromError(selectedEncryptionMode);
+            }
+
             Result<IIPDiscoveryResponse> voiceServerConnectResult = await _dataService.ConnectAsync
             (
                 _voiceServerConnectionDetails!,
@@ -394,7 +400,7 @@ namespace Remora.Discord.Voice
                 (
                     voiceServerConnectResult.Entity.Address.TrimEnd('\0'),
                     voiceServerConnectResult.Entity.Port,
-                    "xsalsa20_poly1305" // TODO: Perhaps this shouldn't be hardcoded?
+                    selectedEncryptionMode.Entity
                 )
             );
             EnqueueCommand(selectProtocol);

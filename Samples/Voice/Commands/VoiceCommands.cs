@@ -114,10 +114,16 @@ namespace Remora.Discord.Samples.Caching.Commands
         /// Gets the version of the underlying sodium library.
         /// </summary>
         /// <returns>A result representing the outcome of the operation.</returns>
-        [Command("sodium-version")]
+        [Command("sodium-info")]
         public async Task<IResult> SodiumVersionCommandAsync()
         {
-            return await _feedbackService.SendContextualInfoAsync(Sodium.GetVersionString() ?? "Unknown version.");
+            return await _feedbackService.SendContextualInfoAsync
+            (
+                $"Version: {Sodium.Version ?? "Unknown"}" +
+                $"\nNonce Size: {Sodium.NonceSize}" +
+                $"\nMAC Size: {Sodium.MacSize}",
+                ct: CancellationToken
+            );
         }
     }
 }

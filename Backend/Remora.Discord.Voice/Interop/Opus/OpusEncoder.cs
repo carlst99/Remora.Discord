@@ -120,10 +120,10 @@ namespace Remora.Discord.Voice.Interop.Opus
         }
 
         /// <summary>
-        /// Creates a new instance of the <see cref="OpusEncoder"/> class.
+        /// Initializes a new instance of the <see cref="OpusEncoder"/> class.
         /// </summary>
         /// <param name="codingMode">The coding mode to use.</param>
-        /// <returns>A result representing the outcome of the operation.</returns>
+        /// <returns>The created <see cref="OpusEncoder"/>, or an error if the initialization failed.</returns>
         public static Result<OpusEncoder> Create(OpusApplicationDefinition codingMode)
         {
             IntPtr state = opus_encoder_create(DiscordSampleRate, DiscordChannelCount, (int)codingMode, out OpusErrorDefinition error);

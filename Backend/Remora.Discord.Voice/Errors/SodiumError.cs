@@ -1,5 +1,5 @@
 ﻿//
-//  OpusError.cs
+//  SodiumError.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -21,20 +21,14 @@
 //
 
 using JetBrains.Annotations;
-using Remora.Discord.Voice.Interop.Opus;
 using Remora.Results;
 
 namespace Remora.Discord.Voice.Errors
 {
     /// <summary>
-    /// Represents an error from an opus operation.
+    /// Represents an error resulting from a sodium operation.
     /// </summary>
-    /// <param name="ErrorCode">The code of the error.</param>
     /// <param name="Message">A description of the error.</param>
     [PublicAPI]
-    public record OpusError
-    (
-        OpusErrorDefinition ErrorCode,
-        string Message
-    ) : ResultError(Message);
+    public record SodiumError(string Message) : ResultError(Message);
 }

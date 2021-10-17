@@ -21,11 +21,13 @@
 //
 
 using System;
-using System.Buffers;
 using System.Buffers.Binary;
+using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
+using JetBrains.Annotations;
+using Remora.Discord.Voice.Abstractions;
 using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Objects.UdpDataProtocol;
 using Remora.Discord.Voice.Abstractions.Objects.UdpDataProtocol.Incoming;
@@ -40,9 +42,22 @@ namespace Remora.Discord.Voice.Services
     /// <summary>
     /// Represents a UDP-based transport service for voice data.
     /// </summary>
+    [PublicAPI]
     public sealed class UdpVoiceDataTransportService : IVoiceDataTranportService, IDisposable
     {
+        private static readonly IReadOnlyDictionary<string, SupportedEncryptionMode> SupportedEncryptionModes;
+
         private readonly UdpClient _client;
+
+        static UdpVoiceDataTransportService()
+        {
+            SupportedEncryptionModes = new Dictionary<string, SupportedEncryptionMode>()
+            {
+                ["xsalsa20_poly1305_lite"] = SupportedEncryptionMode.XSalsa20_Poly1305_Lite,
+                ["xsalsa20_poly1305_suffix"] = SupportedEncryptionMode.XSalsa20_Poly1305_Suffix,
+                ["xsalsa20_poly1305"] = SupportedEncryptionMode.XSalsa20_Poly1305
+            };
+        }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="UdpVoiceDataTransportService"/> class.
@@ -59,6 +74,20 @@ namespace Remora.Discord.Voice.Services
         /// Gets a value indicating whether or not this instance has been disposed.
         /// </summary>
         public bool IsDisposed { get; private set; }
+
+        /// <inheritdoc />
+        public Result<string> SelectSupportedEncryptionMode(IReadOnlyList<string> encryptionModes)
+        {
+            foreach (string mode in encryptionModes)
+            {
+                if (SupportedEncryptionModes.ContainsKey(mode))
+                {
+                    return Result<string>.FromSuccess(mode);
+                }
+            }
+
+            return new VoiceUdpError("A supported encryption mode was not found.");
+        }
 
         /// <inheritdoc />
         public async Task<Result<IIPDiscoveryResponse>> ConnectAsync(IVoiceReady voiceServerDetails, CancellationToken ct = default)

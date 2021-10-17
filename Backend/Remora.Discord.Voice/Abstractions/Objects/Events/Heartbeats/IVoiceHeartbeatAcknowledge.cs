@@ -33,6 +33,6 @@ namespace Remora.Discord.Voice.Abstractions.Objects.Events.Heartbeats
         /// <summary>
         /// Gets the nonce used for the received heartbeat.
         /// </summary>
-        string Nonce { get; }
+        long Nonce { get; }
     }
 }

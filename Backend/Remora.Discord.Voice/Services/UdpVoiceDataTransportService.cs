@@ -138,13 +138,13 @@ namespace Remora.Discord.Voice.Services
         }
 
         /// <inheritdoc />
-        public ValueTask<Result<ReadOnlyMemory<byte>>> ReceivePayloadAsync(CancellationToken ct = default)
+        public ValueTask<Result<ReadOnlyMemory<byte>>> ReceiveOpusFrameAsync(CancellationToken ct = default)
         {
             throw new NotImplementedException();
         }
 
         /// <inheritdoc />
-        public ValueTask<Result> SendPayloadAsync(ReadOnlyMemory<byte> payload, CancellationToken ct = default)
+        public ValueTask<Result> SendOpusFrameAsync(ReadOnlyMemory<byte> payload, CancellationToken ct = default)
         {
             throw new NotImplementedException();
         }

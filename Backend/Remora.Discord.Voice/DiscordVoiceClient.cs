@@ -382,6 +382,8 @@ namespace Remora.Discord.Voice
                 return Result.FromError(selectedEncryptionMode);
             }
 
+            Console.WriteLine("Selected encryption mode: " + selectedEncryptionMode.Entity);
+
             Result<IIPDiscoveryResponse> voiceServerConnectResult = await _dataService.ConnectAsync
             (
                 _voiceServerConnectionDetails!,
@@ -882,13 +884,8 @@ namespace Remora.Discord.Voice
                     // Update the ack timestamp
                     if (receiveResult.Entity is IVoicePayload<IVoiceHeartbeatAcknowledge> heartbeatAck)
                     {
-                        if (!long.TryParse(heartbeatAck.Data.Nonce, out long nonce))
-                        {
-                            return new VoiceGatewayError("The heartbeat acknowledgement payload did not carry a valid nonce.", false);
-                        }
-
                         _heartbeatData.LastReceivedAckTime = DateTime.UtcNow;
-                        _heartbeatData.LastReceivedNonce = long.Parse(heartbeatAck.Data.Nonce);
+                        _heartbeatData.LastReceivedNonce = heartbeatAck.Data.Nonce;
 
                         continue;
                     }
@@ -934,14 +931,15 @@ namespace Remora.Discord.Voice
                         );
                     }
 
-                    if (_heartbeatData.LastSentNonce != _heartbeatData.LastReceivedNonce)
+                    // Discord returns a zero value every time, so this check is invalid.
+                    /* if (_heartbeatData.LastSentNonce != _heartbeatData.LastReceivedNonce)
                     {
                         return new VoiceGatewayError
                         (
                             "The server did not respond with a valid heartbeat.",
                             false
                         );
-                    }
+                    } */
 
                     _heartbeatData.LastSentNonce = _random.Next();
                     Result sendHeartbeatResult = await _transportService.SendPayloadAsync
@@ -961,6 +959,8 @@ namespace Remora.Discord.Voice
                             sendHeartbeatResult
                         );
                     }
+
+                    Console.WriteLine("Sent heartbeat " + _heartbeatData.LastSentNonce.ToString());
 
                     _heartbeatData.LastSentTime = DateTimeOffset.UtcNow;
                 }

@@ -24,6 +24,7 @@ using System;
 using System.Buffers;
 using System.IO;
 using System.Net.WebSockets;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -226,6 +227,12 @@ namespace Remora.Discord.Voice.Services
                 _payloadReceiveSemaphore.Release();
                 semaphoreReleased = true;
 
+                ms.Seek(0, SeekOrigin.Begin);
+
+                // TODO: for debugging purposes only
+                IMemoryOwner<byte> tempBuffer = MemoryPool<byte>.Shared.Rent((int)ms.Length);
+                await ms.ReadAsync(tempBuffer.Memory, ct).ConfigureAwait(false);
+                Console.WriteLine(Encoding.UTF8.GetString(tempBuffer.Memory.Span));
                 ms.Seek(0, SeekOrigin.Begin);
 
                 var payload = await JsonSerializer.DeserializeAsync<IVoicePayload>(ms, _jsonOptions, ct).ConfigureAwait(false);

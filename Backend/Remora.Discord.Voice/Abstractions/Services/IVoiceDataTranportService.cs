@@ -69,25 +69,25 @@ namespace Remora.Discord.Voice.Abstractions.Services
         Task<Result<IIPDiscoveryResponse>> ConnectAsync(IVoiceReady voiceServerDetails, CancellationToken ct = default);
 
         /// <summary>
-        /// Asynchronously sends a payload.
+        /// Asynchronously sends an opus data frame.
         /// </summary>
         /// <remarks>
-        /// This method should be thread-safe in conjunction with <see cref="ReceivePayloadAsync"/>.
+        /// This method should be thread-safe in conjunction with <see cref="ReceiveOpusFrameAsync"/>.
         /// </remarks>
-        /// <param name="payload">The payload.</param>
+        /// <param name="frame">The data frame.</param>
         /// <param name="ct">The cancellation token for this operation.</param>
         /// <returns>A send result which may or may not have succeeded.</returns>
-        ValueTask<Result> SendPayloadAsync(ReadOnlyMemory<byte> payload, CancellationToken ct = default);
+        ValueTask<Result> SendOpusFrameAsync(ReadOnlyMemory<byte> frame, CancellationToken ct = default);
 
         /// <summary>
-        /// Asynchronously receives a payload.
+        /// Asynchronously receives an opus data frame.
         /// </summary>
         /// <remarks>
-        /// This method should be thread-safe in conjunction with <see cref="SendPayloadAsync"/>.
+        /// This method should be thread-safe in conjunction with <see cref="SendOpusFrameAsync"/>.
         /// </remarks>
         /// <param name="ct">The cancellation token for this operation.</param>
         /// <returns>A receive result which may or may not have succeeded.</returns>
-        ValueTask<Result<ReadOnlyMemory<byte>>> ReceivePayloadAsync(CancellationToken ct = default);
+        ValueTask<Result<ReadOnlyMemory<byte>>> ReceiveOpusFrameAsync(CancellationToken ct = default);
 
         /// <summary>
         /// Disconnects from the transport endpoint.

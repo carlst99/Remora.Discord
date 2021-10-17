@@ -21,6 +21,7 @@
 //
 
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using JetBrains.Annotations;
 using Remora.Discord.Voice.Errors;
@@ -171,6 +172,15 @@ namespace Remora.Discord.Voice.Interop.Opus
         }
 
         /// <summary>
+        /// Calculates the frame size of a PCM-16 (short[]) sample.
+        /// </summary>
+        /// <param name="sampleSize">The size of the sample.</param>
+        /// <returns>The frame size of the sample.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int CalculateFrameSize(int sampleSize)
+            => sampleSize / DiscordChannelCount;
+
+        /// <summary>
         /// Encodes an audio sample.
         /// </summary>
         /// <param name="pcm16">The PCM-16 audio data to encode.</param>
@@ -183,8 +193,7 @@ namespace Remora.Discord.Voice.Interop.Opus
                 return new ArgumentOutOfRangeError(nameof(output), "PCM and output buffers must be of equal length.");
             }
 
-            int sampleDurationMS = pcm16.Length / (DiscordSampleRate / 1000) / DiscordChannelCount;
-            int frameSize = sampleDurationMS * (DiscordSampleRate / 1000);
+            int frameSize = CalculateFrameSize(pcm16.Length);
 
             int writtenLength;
             fixed (short* pcm16Ptr = pcm16)
@@ -233,23 +242,13 @@ namespace Remora.Discord.Voice.Interop.Opus
         /// <inheritdoc />
         public void Dispose()
         {
-            // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
-            Dispose(disposing: true);
-            GC.SuppressFinalize(this);
-        }
-
-        private void Dispose(bool disposing)
-        {
             if (!IsDisposed)
             {
-                if (disposing)
-                {
-                    // TODO: dispose managed state (managed objects)
-                }
-
                 opus_encoder_destroy(_state);
 
                 IsDisposed = true;
+
+                GC.SuppressFinalize(this);
             }
         }
 
@@ -259,7 +258,7 @@ namespace Remora.Discord.Voice.Interop.Opus
         ~OpusEncoder()
         {
             // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
-            Dispose(disposing: false);
+            Dispose();
         }
     }
 }

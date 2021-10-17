@@ -23,7 +23,6 @@
 using System;
 using System.Buffers.Binary;
 using Remora.Discord.Voice.Abstractions.Objects.UdpDataProtocol;
-using Remora.Discord.Voice.Abstractions.Objects.UdpDataProtocol.Outgoing;
 
 namespace Remora.Discord.Voice.Objects.UdpDataProtocol.Outgoing
 {

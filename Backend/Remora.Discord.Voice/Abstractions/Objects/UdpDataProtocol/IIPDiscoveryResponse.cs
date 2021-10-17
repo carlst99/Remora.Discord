@@ -20,7 +20,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
-namespace Remora.Discord.Voice.Abstractions.Objects.UdpDataProtocol.Incoming
+namespace Remora.Discord.Voice.Abstractions.Objects.UdpDataProtocol
 {
     /// <summary>
     /// Represents an IP discovery request packet.

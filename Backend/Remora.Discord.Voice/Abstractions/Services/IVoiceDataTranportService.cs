@@ -26,7 +26,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using JetBrains.Annotations;
 using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
-using Remora.Discord.Voice.Abstractions.Objects.UdpDataProtocol.Incoming;
+using Remora.Discord.Voice.Abstractions.Objects.UdpDataProtocol;
 using Remora.Results;
 
 namespace Remora.Discord.Voice.Abstractions.Services
@@ -69,21 +69,28 @@ namespace Remora.Discord.Voice.Abstractions.Services
         Task<Result<IIPDiscoveryResponse>> ConnectAsync(IVoiceReady voiceServerDetails, CancellationToken ct = default);
 
         /// <summary>
+        /// Initializes the transport service.
+        /// </summary>
+        /// <param name="key">The key to encrypt data with.</param>
+        /// <returns>A result indicating the outcome of the operation.</returns>
+        Result Initialize(IReadOnlyList<byte> key);
+
+        /// <summary>
         /// Asynchronously sends an opus data frame.
         /// </summary>
         /// <remarks>
         /// This method should be thread-safe in conjunction with <see cref="ReceiveOpusFrameAsync"/>.
         /// </remarks>
         /// <param name="frame">The data frame.</param>
-        /// <param name="ct">The cancellation token for this operation.</param>
+        /// <param name="pcm16Length">The length of the PCM-16 data that the frame was constructed from.</param>
         /// <returns>A send result which may or may not have succeeded.</returns>
-        ValueTask<Result> SendOpusFrameAsync(ReadOnlyMemory<byte> frame, CancellationToken ct = default);
+        Result SendFrame(ReadOnlySpan<byte> frame, int pcm16Length);
 
         /// <summary>
         /// Asynchronously receives an opus data frame.
         /// </summary>
         /// <remarks>
-        /// This method should be thread-safe in conjunction with <see cref="SendOpusFrameAsync"/>.
+        /// This method should be thread-safe in conjunction with <see cref="SendFrame"/>.
         /// </remarks>
         /// <param name="ct">The cancellation token for this operation.</param>
         /// <returns>A receive result which may or may not have succeeded.</returns>

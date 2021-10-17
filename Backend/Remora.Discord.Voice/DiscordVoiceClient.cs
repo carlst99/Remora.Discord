@@ -36,7 +36,7 @@ using Remora.Discord.Voice.Abstractions.Objects.Commands;
 using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Objects.Events.Heartbeats;
 using Remora.Discord.Voice.Abstractions.Objects.Events.Sessions;
-using Remora.Discord.Voice.Abstractions.Objects.UdpDataProtocol.Incoming;
+using Remora.Discord.Voice.Abstractions.Objects.UdpDataProtocol;
 using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Errors;
 using Remora.Discord.Voice.Objects;

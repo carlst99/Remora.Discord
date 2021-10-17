@@ -66,14 +66,32 @@ namespace Remora.Discord.Voice.Interop.Opus
         /// <param name="error">Error result, if any (see <see cref="OpusErrorDefinition"/>).</param>
         /// <returns>A pointer to the encoder state.</returns>
         [DllImport(OpusLibraryName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr opus_encoder_create(int fs, int channels, int application, out int error);
-
-        // TODO: opus_encoder_ctl
+        private static extern IntPtr opus_encoder_create(int fs, int channels, int application, out OpusErrorDefinition error);
 
         /// <summary>
-        /// Frees an encoder allocation by <see cref="opus_encoder_create(int, int, int, out int)"/>.
+        /// Gets a control parameter on an encoder.
         /// </summary>
-        /// <param name="st">The encoder state.</param>
+        /// <param name="encoderState">A pointer to the encoder state.</param>
+        /// <param name="request">The parameter to get the value of.</param>
+        /// <param name="value">The value of the parameter.</param>
+        /// <returns>An <see cref="OpusErrorDefinition"/> result.</returns>
+        [DllImport(OpusLibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "opus_encoder_ctl")]
+        private static extern OpusErrorDefinition _OpusEncoderGetCtl(IntPtr encoderState, OpusControlRequestDefinition request, out int value);
+
+        /// <summary>
+        /// Sets a control parameter on an encoder.
+        /// </summary>
+        /// <param name="encoderState">A pointer to the encoder state.</param>
+        /// <param name="parameter">The parameter to set.</param>
+        /// <param name="value">The value to set the parameter to.</param>
+        /// <returns>An <see cref="OpusErrorDefinition"/> result.</returns>
+        [DllImport(OpusLibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "opus_encoder_ctl")]
+        private static extern OpusErrorDefinition _OpusEncoderSetCtl(IntPtr encoderState, OpusControlRequestDefinition parameter, int value);
+
+        /// <summary>
+        /// Frees an encoder allocation by <see cref="opus_encoder_create(int, int, int, out OpusErrorDefinition)"/>.
+        /// </summary>
+        /// <param name="st">A pointer to the encoder state.</param>
         [DllImport(OpusLibraryName, CallingConvention = CallingConvention.Cdecl)]
         private static extern void opus_encoder_destroy(IntPtr st);
     }
@@ -81,6 +99,14 @@ namespace Remora.Discord.Voice.Interop.Opus
     [PublicAPI]
     public sealed partial class OpusEncoder : IDisposable
     {
+        private const int DiscordSampleRate = 48000;
+        private const int DiscordChannelCount = 2;
+
+        /// <summary>
+        /// Gets the maximum allowed bitrate in a Discord channel. Currently 128kbps.
+        /// </summary>
+        public const int DiscordMaxBitrate = 131072;
+
         private readonly IntPtr _state;
 
         /// <summary>
@@ -100,20 +126,108 @@ namespace Remora.Discord.Voice.Interop.Opus
         /// <returns>A result representing the outcome of the operation.</returns>
         public static Result<OpusEncoder> Create(OpusApplicationDefinition codingMode)
         {
-            IntPtr state = opus_encoder_create(48000, 2, (int)codingMode, out int error);
+            IntPtr state = opus_encoder_create(DiscordSampleRate, DiscordChannelCount, (int)codingMode, out OpusErrorDefinition error);
 
-            if (!Enum.IsDefined(typeof(OpusErrorDefinition), error))
+            if (error is not OpusErrorDefinition.OK)
             {
-                return new OpusError((OpusErrorDefinition)int.MinValue, "An unknown (non-opus defined) error occured.");
+                return new OpusError(error, "Failed to create an encoder.");
             }
 
-            OpusErrorDefinition errorDefinition = (OpusErrorDefinition)error;
-            if (errorDefinition is not OpusErrorDefinition.OK)
+            error = codingMode switch
             {
-                return new OpusError(errorDefinition, "Failed to create an encoder.");
+                OpusApplicationDefinition.Voip => _OpusEncoderSetCtl(state, OpusControlRequestDefinition.SetSignal, (int)OpusSignalDefinition.Voice),
+                OpusApplicationDefinition.Audio => _OpusEncoderSetCtl(state, OpusControlRequestDefinition.SetSignal, (int)OpusSignalDefinition.Music),
+                _ => _OpusEncoderSetCtl(state, OpusControlRequestDefinition.SetSignal, (int)OpusSpecialDefinition.Auto),
+            };
+
+            if (error is not OpusErrorDefinition.OK)
+            {
+                opus_encoder_destroy(state);
+                return new OpusError(error, "Failed to set encoder signal type");
+            }
+
+            error = _OpusEncoderSetCtl(state, OpusControlRequestDefinition.SetPacketLossPercentage, 15);
+            if (error is not OpusErrorDefinition.OK)
+            {
+                opus_encoder_destroy(state);
+                return new OpusError(error, "Failed to set expected packet loss on encoder.");
+            }
+
+            error = _OpusEncoderSetCtl(state, OpusControlRequestDefinition.SetInbandFec, 1); // Enable
+            if (error is not OpusErrorDefinition.OK)
+            {
+                opus_encoder_destroy(state);
+                return new OpusError(error, "Failed to enable in-band forward error control on encoder.");
+            }
+
+            error = _OpusEncoderSetCtl(state, OpusControlRequestDefinition.SetBitrate, DiscordMaxBitrate); // 128 kbps, maximum bitrate in a Discord channel.
+            if (error is not OpusErrorDefinition.OK)
+            {
+                opus_encoder_destroy(state);
+                return new OpusError(error, "Failed to set bitrate on encoder.");
             }
 
             return new OpusEncoder(state);
+        }
+
+        /// <summary>
+        /// Encodes an audio sample.
+        /// </summary>
+        /// <param name="pcm16">The PCM-16 audio data to encode.</param>
+        /// <param name="output">The output buffer. Must be the same length as the <paramref name="pcm16"/> buffer.</param>
+        /// <returns>A result representing the outcome of the operation.</returns>
+        public unsafe Result Encode(ReadOnlySpan<short> pcm16, Span<byte> output)
+        {
+            if (pcm16.Length != output.Length)
+            {
+                return new ArgumentOutOfRangeError(nameof(output), "PCM and output buffers must be of equal length.");
+            }
+
+            int sampleDurationMS = pcm16.Length / (DiscordSampleRate / 1000) / DiscordChannelCount;
+            int frameSize = sampleDurationMS * (DiscordSampleRate / 1000);
+
+            int writtenLength;
+            fixed (short* pcm16Ptr = pcm16)
+            {
+                fixed (byte* outputPtr = output)
+                {
+                    writtenLength = opus_encode(_state, pcm16Ptr, frameSize, outputPtr, output.Length);
+                }
+            }
+
+            return writtenLength < 0
+                ? new OpusError((OpusErrorDefinition)writtenLength, "Failed to encode audio sample.")
+                : Result.FromSuccess();
+        }
+
+        /// <summary>
+        /// Sets the bitrate to encode at.
+        /// </summary>
+        /// <param name="bitrate">The new bitrate. Must be between 0 and <see cref="DiscordMaxBitrate"/>.</param>
+        /// <returns>A result representing the outcome of the operation.</returns>
+        public Result SetBitrate(int bitrate)
+        {
+            if (bitrate < 0 || bitrate > DiscordMaxBitrate)
+            {
+                return new ArgumentOutOfRangeError(nameof(bitrate), $"Bitrate must be greater than zero and less than {DiscordMaxBitrate}.");
+            }
+
+            OpusErrorDefinition error = _OpusEncoderSetCtl(_state, OpusControlRequestDefinition.SetBitrate, bitrate);
+            return error is not OpusErrorDefinition.OK
+                ? new OpusError(error, "Failed to set bitrate on encoder.")
+                : Result.FromSuccess();
+        }
+
+        /// <summary>
+        /// Resets the state of the encoder in preparation for submitting a new stream.
+        /// </summary>
+        /// <returns>A result representing the outcome of the operation.</returns>
+        public Result Reset()
+        {
+            OpusErrorDefinition error = _OpusEncoderSetCtl(_state, OpusControlRequestDefinition.ResetState, 0);
+            return error is not OpusErrorDefinition.OK
+                ? new OpusError(error, "Failed to reset the encoder.")
+                : Result.FromSuccess();
         }
 
         /// <inheritdoc />

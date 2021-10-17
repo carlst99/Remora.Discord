@@ -54,7 +54,7 @@ namespace Remora.Discord.Voice.Interop.Opus
         /// This may be used to impose an upper limit on the instant bitrate, but should not be used as the only bitrate control.
         /// Use OPUS_SET_BITRATE to control the bitrate.
         /// </param>
-        /// <returns>The length of the encoded packet (in bytes) on success or a negative error code (see <see cref="OpusErrorDefinition"/>) on failure.</returns>
+        /// <returns>The length of the encoded data (in bytes) on success or a negative error code (see <see cref="OpusErrorDefinition"/>) on failure.</returns>
         [DllImport(OpusLibraryName, CallingConvention = CallingConvention.Cdecl)]
         private static extern int opus_encode(IntPtr st, byte* pcm, int frame_size, byte* data, int max_data_bytes);
 
@@ -181,12 +181,21 @@ namespace Remora.Discord.Voice.Interop.Opus
             => sampleSize / DiscordChannelCount / sizeof(short); // Divide by the byte size of individual PCM-16 segments
 
         /// <summary>
+        /// Calculates the size of a PCM-16 (short[]) sample.
+        /// </summary>
+        /// <param name="sampleDurationMS">The duration of the sample in milliseconds.</param>
+        /// <returns>The size of the sample.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int CalculateSampleSize(int sampleDurationMS)
+         => sampleDurationMS * DiscordChannelCount * (DiscordSampleRate / 1000) * sizeof(short); // Multiply by the byte size of individual PCM-16 segments
+
+        /// <summary>
         /// Encodes an audio sample.
         /// </summary>
         /// <param name="pcm16">The PCM-16 audio data to encode.</param>
         /// <param name="output">The output buffer. Must be the same length as the <paramref name="pcm16"/> buffer.</param>
-        /// <returns>A result representing the outcome of the operation.</returns>
-        public unsafe Result Encode(ReadOnlySpan<byte> pcm16, Span<byte> output)
+        /// <returns>The length of the encoded audio, or an error if the operation failed..</returns>
+        public unsafe Result<int> Encode(ReadOnlySpan<byte> pcm16, Span<byte> output)
         {
             if (pcm16.Length != output.Length)
             {
@@ -206,7 +215,7 @@ namespace Remora.Discord.Voice.Interop.Opus
 
             return writtenLength < 0
                 ? new OpusError((OpusErrorDefinition)writtenLength, "Failed to encode audio sample.")
-                : Result.FromSuccess();
+                : writtenLength;
         }
 
         /// <summary>

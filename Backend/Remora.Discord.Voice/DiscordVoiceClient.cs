@@ -21,7 +21,9 @@
 //
 
 using System;
+using System.Buffers;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO;
 using System.Net.WebSockets;
 using System.Threading;
@@ -64,11 +66,10 @@ namespace Remora.Discord.Voice
         private readonly IVoicePayloadTransportService _transportService;
         private readonly IVoiceDataTranportService _dataService;
         private readonly Random _random;
-
-        /// <summary>
-        /// Holds data pertaining to the heartbeating process.
-        /// </summary>
         private readonly HeartbeatData _heartbeatData;
+        private readonly SemaphoreSlim _transmitSemaphore;
+        private readonly IMemoryOwner<byte> _transmitPcmBuffer;
+        private readonly IMemoryOwner<byte> _transmitOpusBuffer;
 
         /// <summary>
         /// Holds payloads that have been submitted by the application, but have not yet been sent to the gateway.
@@ -94,7 +95,6 @@ namespace Remora.Discord.Voice
         private IVoiceReady? _voiceServerConnectionDetails;
 
         private OpusEncoder? _encoder;
-        private bool _isTransmitting;
 
         /// <summary>
         /// Gets the connection status of the voice gateway.
@@ -138,6 +138,10 @@ namespace Remora.Discord.Voice
             _runLoopTask = Task.FromResult(Result.FromSuccess());
             _sendTask = Task.FromResult(Result.FromSuccess());
             _receiveTask = Task.FromResult(Result.FromSuccess());
+
+            _transmitSemaphore = new SemaphoreSlim(1, 1);
+            _transmitPcmBuffer = MemoryPool<byte>.Shared.Rent(OpusEncoder.CalculateSampleSize(20));
+            _transmitOpusBuffer = MemoryPool<byte>.Shared.Rent(OpusEncoder.CalculateSampleSize(20));
 
             ConnectionStatus = GatewayConnectionStatus.Offline;
         }
@@ -260,47 +264,81 @@ namespace Remora.Discord.Voice
         /// <returns>A result representing the outcome of the operation.</returns>
         public async Task<Result> TransmitAudioAsync(Stream pcm16AudioStream, CancellationToken ct = default)
         {
-            if (ConnectionStatus is not GatewayConnectionStatus.Connected || !_dataService.IsConnected)
-            {
-                return new InvalidOperationError("Gateway is not connected.");
-            }
+            bool needsRelease = false;
+            Stopwatch sw = new();
 
-            if (_isTransmitting)
+            try
             {
-                return new InvalidOperationError("This client is already transmitting audio.");
-            }
-            _isTransmitting = true;
+                if (ConnectionStatus is not GatewayConnectionStatus.Connected || !_dataService.IsConnected)
+                {
+                    return new InvalidOperationError("Gateway is not connected.");
+                }
 
-            EnqueueCommand
-            (
-                new VoiceSpeaking
+                if (!await _transmitSemaphore.WaitAsync(10, ct).ConfigureAwait(false))
+                {
+                    return new InvalidOperationError("This client is already transmitting audio.");
+                }
+                needsRelease = true;
+
+                EnqueueCommand
                 (
-                    _gatewayConnectionDetails!.VoiceState.UserID,
-                    SpeakingFlags.Microphone,
-                    _voiceServerConnectionDetails!.SSRC
-                )
-            );
+                    new VoiceSpeaking
+                    (
+                        _gatewayConnectionDetails!.VoiceState.UserID,
+                        SpeakingFlags.Microphone,
+                        _voiceServerConnectionDetails!.SSRC
+                    )
+                );
 
-            // Give time for the audio to (hopefully!) arrive at the gateway.
-            await Task.Delay(20, ct).ConfigureAwait(false);
+                // Give time for the audio to arrive at the gateway.
+                await Task.Delay(_clientOptions.MinimumSafetyMargin, ct).ConfigureAwait(false);
 
-            while (!ct.IsCancellationRequested)
-            {
-                throw new NotImplementedException();
-            }
+                int sampleCount = 0;
+                sw.Start();
 
-            EnqueueCommand
-            (
-                new VoiceSpeaking
+                while (!ct.IsCancellationRequested)
+                {
+                    int pcmRead = await pcm16AudioStream.ReadAsync(_transmitPcmBuffer.Memory, ct).ConfigureAwait(false);
+
+                    Result<int> encodeResult = _encoder!.Encode(_transmitPcmBuffer.Memory.Span[..pcmRead], _transmitOpusBuffer.Memory.Span);
+                    if (!encodeResult.IsSuccess)
+                    {
+                        return Result.FromError(encodeResult);
+                    }
+
+                    long delay = Math.Max(0, pcmRead + ((pcmRead * sampleCount) - sw.ElapsedMilliseconds));
+                    await Task.Delay(TimeSpan.FromMilliseconds(delay), ct).ConfigureAwait(false);
+
+                    _dataService.SendFrame(_transmitOpusBuffer.Memory.Span[..encodeResult.Entity], pcmRead);
+                    sampleCount++;
+                }
+
+                sw.Stop();
+
+                EnqueueCommand
                 (
-                    _gatewayConnectionDetails!.VoiceState.UserID,
-                    SpeakingFlags.None,
-                    _voiceServerConnectionDetails!.SSRC
-                )
-            );
+                    new VoiceSpeaking
+                    (
+                        _gatewayConnectionDetails!.VoiceState.UserID,
+                        SpeakingFlags.None,
+                        _voiceServerConnectionDetails!.SSRC
+                    )
+                );
 
-            _isTransmitting = false;
-            return Result.FromSuccess();
+                return Result.FromSuccess();
+            }
+            catch (Exception ex)
+            {
+                return ex;
+            }
+            finally
+            {
+                if (needsRelease)
+                {
+                    _transmitSemaphore.Release();
+                    sw.Stop();
+                }
+            }
         }
 
         /// <inheritdoc />
@@ -312,6 +350,8 @@ namespace Remora.Discord.Voice
             }
 
             _encoder?.Dispose();
+            _transmitSemaphore.Dispose();
+            _transmitPcmBuffer.Dispose();
         }
 
         /// <summary>
@@ -341,7 +381,6 @@ namespace Remora.Discord.Voice
             _voiceServerConnectionDetails = null;
 
             _encoder?.Reset();
-            _isTransmitting = false;
 
             ConnectionStatus = GatewayConnectionStatus.Offline;
         }

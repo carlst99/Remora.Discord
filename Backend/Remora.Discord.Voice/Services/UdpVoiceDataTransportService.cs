@@ -85,8 +85,9 @@ namespace Remora.Discord.Voice.Services
             _options = options.Value;
             _encryptionMode = SupportedEncryptionMode.XSalsa20_Poly1305;
 
+            // Randomise as per the RTP specification recommendation.
             _sequence = (ushort)random.Next(0, ushort.MaxValue);
-            _timestamp = (uint)random.Next();
+            _timestamp = (uint)random.Next(0, 4096);
         }
 
         /// <inheritdoc />

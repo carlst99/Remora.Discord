@@ -267,7 +267,6 @@ namespace Remora.Discord.Voice
         public async Task<Result> TransmitAudioAsync(Stream pcm16AudioStream, CancellationToken ct = default)
         {
             bool needsRelease = false;
-            Stopwatch sw = new();
 
             try
             {
@@ -282,21 +281,10 @@ namespace Remora.Discord.Voice
                 }
                 needsRelease = true;
 
-                EnqueueCommand
-                (
-                    new VoiceSpeaking
-                    (
-                        _gatewayConnectionDetails!.VoiceState.UserID,
-                        SpeakingFlags.Microphone,
-                        _voiceServerConnectionDetails!.SSRC
-                    )
-                );
-
-                // Give time for the audio to arrive at the gateway.
-                await Task.Delay(_clientOptions.HeartbeatSafetyMargin * 10, ct).ConfigureAwait(false);
-
-                int sampleCount = 0;
-                sw.Start();
+                // From https://github.com/DSharpPlus/DSharpPlus/blob/master/DSharpPlus.VoiceNext/VoiceNextConnection.cs
+                double synchronizerTicks = Stopwatch.GetTimestamp();
+                double synchronizerResolution = Stopwatch.Frequency * 0.005;
+                double tickResolution = 10_000_000.0 / Stopwatch.Frequency;
 
                 while (!ct.IsCancellationRequested)
                 {
@@ -310,8 +298,28 @@ namespace Remora.Discord.Voice
 
                     Console.WriteLine("Opus Encoded: {0}", encodeResult.Entity);
 
-                    long delay = Math.Max(0, pcmRead + ((pcmRead * sampleCount) - sw.ElapsedMilliseconds));
-                    await Task.Delay(TimeSpan.FromMilliseconds(delay), ct).ConfigureAwait(false);
+                    // From https://github.com/DSharpPlus/DSharpPlus/blob/master/DSharpPlus.VoiceNext/VoiceNextConnection.cs
+                    int durationModifier = OpusEncoder.CalculateSampleDuration(pcmRead);
+                    double cts = Math.Max(Stopwatch.GetTimestamp() - synchronizerTicks, 0);
+                    if (cts < synchronizerResolution * durationModifier)
+                    {
+                        await Task.Delay
+                        (
+                            TimeSpan.FromTicks((long)(((synchronizerResolution * durationModifier) - cts) * tickResolution)),
+                            ct
+                        ).ConfigureAwait(false);
+                    }
+                    synchronizerTicks += synchronizerResolution * durationModifier;
+
+                    EnqueueCommand
+                    (
+                        new VoiceSpeaking
+                        (
+                            _gatewayConnectionDetails!.VoiceState.UserID,
+                            SpeakingFlags.Microphone,
+                            _voiceServerConnectionDetails!.SSRC
+                        )
+                    );
 
                     Result sendFrameResult = _dataService.SendFrame(_transmitOpusBuffer.Memory.Span[..encodeResult.Entity], pcmRead);
                     if (!sendFrameResult.IsSuccess)
@@ -319,15 +327,11 @@ namespace Remora.Discord.Voice
                         return sendFrameResult;
                     }
 
-                    sampleCount++;
-
                     if (pcmRead < _sampleSize)
                     {
                         break;
                     }
                 }
-
-                sw.Stop();
 
                 EnqueueCommand
                 (
@@ -350,7 +354,6 @@ namespace Remora.Discord.Voice
                 if (needsRelease)
                 {
                     _transmitSemaphore.Release();
-                    sw.Stop();
                 }
             }
         }
@@ -967,8 +970,6 @@ namespace Remora.Discord.Voice
                         await Task.Delay(sleepTime, ct).ConfigureAwait(false);
                         continue;
                     }
-
-                    Console.WriteLine("Sending {0}", payload.GetType());
 
                     Result sendResult = await _transportService.SendPayloadAsync(payload, ct).ConfigureAwait(false);
                     if (sendResult.IsSuccess)

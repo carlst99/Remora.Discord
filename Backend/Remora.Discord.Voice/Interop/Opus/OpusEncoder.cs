@@ -56,7 +56,7 @@ namespace Remora.Discord.Voice.Interop.Opus
         /// </param>
         /// <returns>The length of the encoded packet (in bytes) on success or a negative error code (see <see cref="OpusErrorDefinition"/>) on failure.</returns>
         [DllImport(OpusLibraryName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern int opus_encode(IntPtr st, short* pcm, int frame_size, byte* data, int max_data_bytes);
+        private static extern int opus_encode(IntPtr st, byte* pcm, int frame_size, byte* data, int max_data_bytes);
 
         /// <summary>
         /// Allocates and initializes an encoder state.
@@ -178,7 +178,7 @@ namespace Remora.Discord.Voice.Interop.Opus
         /// <returns>The frame size of the sample.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int CalculateFrameSize(int sampleSize)
-            => sampleSize / DiscordChannelCount;
+            => sampleSize / DiscordChannelCount / sizeof(short); // Divide by the byte size of individual PCM-16 segments
 
         /// <summary>
         /// Encodes an audio sample.
@@ -186,7 +186,7 @@ namespace Remora.Discord.Voice.Interop.Opus
         /// <param name="pcm16">The PCM-16 audio data to encode.</param>
         /// <param name="output">The output buffer. Must be the same length as the <paramref name="pcm16"/> buffer.</param>
         /// <returns>A result representing the outcome of the operation.</returns>
-        public unsafe Result Encode(ReadOnlySpan<short> pcm16, Span<byte> output)
+        public unsafe Result Encode(ReadOnlySpan<byte> pcm16, Span<byte> output)
         {
             if (pcm16.Length != output.Length)
             {
@@ -196,7 +196,7 @@ namespace Remora.Discord.Voice.Interop.Opus
             int frameSize = CalculateFrameSize(pcm16.Length);
 
             int writtenLength;
-            fixed (short* pcm16Ptr = pcm16)
+            fixed (byte* pcm16Ptr = pcm16)
             {
                 fixed (byte* outputPtr = output)
                 {

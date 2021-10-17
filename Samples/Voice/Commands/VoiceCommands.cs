@@ -30,6 +30,7 @@ using Remora.Discord.Commands.Contexts;
 using Remora.Discord.Commands.Feedback.Services;
 using Remora.Discord.Voice;
 using Remora.Discord.Voice.Interop;
+using Remora.Discord.Voice.Interop.Opus;
 using Remora.Results;
 
 namespace Remora.Discord.Samples.Caching.Commands
@@ -75,7 +76,16 @@ namespace Remora.Discord.Samples.Caching.Commands
         {
             DiscordVoiceClient client = _voiceClientFactory.Get(_context.GuildID.Value);
 
-            Result runResult = await client.RunAsync(_context.GuildID.Value, connectTo.ID, true, false, CancellationToken).ConfigureAwait(false);
+            Result runResult = await client.RunAsync
+            (
+                _context.GuildID.Value,
+                connectTo.ID,
+                true,
+                false,
+                OpusApplicationDefinition.Audio,
+                CancellationToken
+            ).ConfigureAwait(false);
+
             if (!runResult.IsSuccess)
             {
                 return await _feedbackService.SendContextualErrorAsync

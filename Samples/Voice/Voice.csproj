@@ -16,4 +16,10 @@
         <ProjectReference Include="..\..\Remora.Discord.Hosting\Remora.Discord.Hosting.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+      <None Update="libopus.dll">
+        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      </None>
+    </ItemGroup>
+
 </Project>

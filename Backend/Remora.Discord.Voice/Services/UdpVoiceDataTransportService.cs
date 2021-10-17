@@ -55,7 +55,6 @@ namespace Remora.Discord.Voice.Services
         private readonly DiscordVoiceClientOptions _options;
 
         private Sodium? _encryptor;
-        private OpusEncoder? _encoder;
         private SupportedEncryptionMode _encryptionMode;
         private uint _ssrc;
         private ushort _sequence;
@@ -160,14 +159,6 @@ namespace Remora.Discord.Voice.Services
         /// <inheritdoc />
         public Result Initialize(IReadOnlyList<byte> key)
         {
-            _encoder?.Dispose();
-
-            Result<OpusEncoder> createEncoder = OpusEncoder.Create(_options.AudioOptimization);
-            if (!createEncoder.IsSuccess)
-            {
-                return Result.FromError(createEncoder);
-            }
-
             if (key.Count != Sodium.KeySize)
             {
                 return new ArgumentOutOfRangeError(nameof(key), "Size of key must equal " + Sodium.KeySize);
@@ -185,7 +176,6 @@ namespace Remora.Discord.Voice.Services
                 return Result.FromError(createEncryptor);
             }
 
-            _encoder = createEncoder.Entity;
             _encryptor = createEncryptor.Entity;
 
             return Result.FromSuccess();
@@ -332,7 +322,6 @@ namespace Remora.Discord.Voice.Services
                 if (disposing)
                 {
                     _client.Dispose();
-                    _encoder?.Dispose();
                 }
 
                 IsDisposed = true;

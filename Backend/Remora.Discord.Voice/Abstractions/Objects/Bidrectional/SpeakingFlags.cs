@@ -32,6 +32,11 @@ namespace Remora.Discord.Voice.Abstractions.Objects.Bidrectional
     public enum SpeakingFlags
     {
         /// <summary>
+        /// No transmission of audio.
+        /// </summary>
+        None = 0,
+
+        /// <summary>
         /// Normal transmission of voice audio.
         /// </summary>
         Microphone = 1 << 0,

@@ -22,7 +22,6 @@
 
 using System;
 using JetBrains.Annotations;
-using Remora.Discord.Voice.Interop.Opus;
 
 namespace Remora.Discord.Voice
 {
@@ -43,11 +42,6 @@ namespace Remora.Discord.Voice
         /// Gets or sets the minimum safety margin.
         /// </summary>
         public TimeSpan MinimumSafetyMargin { get; set; } = TimeSpan.FromMilliseconds(20);
-
-        /// <summary>
-        /// Gets or sets the type of audio being transmitted, in order to optimize transmission.
-        /// </summary>
-        public OpusApplicationDefinition AudioOptimization { get; set; } = OpusApplicationDefinition.Audio;
 
         /// <summary>
         /// Calculates the true heartbeat safety margin, based on the heartbeat interval.

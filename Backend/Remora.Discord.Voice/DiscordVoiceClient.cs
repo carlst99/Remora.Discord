@@ -22,6 +22,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.IO;
 using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Tasks;
@@ -32,6 +33,7 @@ using Remora.Discord.API.Gateway.Commands;
 using Remora.Discord.Core;
 using Remora.Discord.Gateway;
 using Remora.Discord.Voice.Abstractions.Objects;
+using Remora.Discord.Voice.Abstractions.Objects.Bidrectional;
 using Remora.Discord.Voice.Abstractions.Objects.Commands;
 using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Objects.Events.Heartbeats;
@@ -39,7 +41,9 @@ using Remora.Discord.Voice.Abstractions.Objects.Events.Sessions;
 using Remora.Discord.Voice.Abstractions.Objects.UdpDataProtocol;
 using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Errors;
+using Remora.Discord.Voice.Interop.Opus;
 using Remora.Discord.Voice.Objects;
+using Remora.Discord.Voice.Objects.Bidirectional;
 using Remora.Discord.Voice.Objects.Commands.ConnectingResuming;
 using Remora.Discord.Voice.Objects.Commands.Heartbeats;
 using Remora.Discord.Voice.Objects.Commands.Protocols;
@@ -51,7 +55,7 @@ namespace Remora.Discord.Voice
     /// Represents a Discord Voice Gateway client.
     /// </summary>
     [PublicAPI]
-    public sealed class DiscordVoiceClient
+    public sealed class DiscordVoiceClient : IAsyncDisposable
     {
         private readonly ILogger<DiscordVoiceClient> _logger;
         private readonly DiscordGatewayClient _gatewayClient;
@@ -88,6 +92,9 @@ namespace Remora.Discord.Voice
         private UpdateVoiceState? _connectionRequestParameters;
         private VoiceConnectionEstablishmentDetails? _gatewayConnectionDetails;
         private IVoiceReady? _voiceServerConnectionDetails;
+
+        private OpusEncoder? _encoder;
+        private bool _isTransmitting;
 
         /// <summary>
         /// Gets the connection status of the voice gateway.
@@ -149,6 +156,7 @@ namespace Remora.Discord.Voice
         /// <param name="channelID">The ID of the channel to connect to.</param>
         /// <param name="isSelfMuted">A value indicating whether the bot should mute itself.</param>
         /// <param name="isSelfDeafened">A value indicating whether the bot should deafen itself.</param>
+        /// <param name="audioOptimizationMethod">The type of audio being transmitted, in order to optimize transmission.</param>
         /// <param name="ct">A token by which the caller can request this method to stop.</param>
         /// <returns>A gateway connection result which may or may not have succeeded.</returns>
         public async Task<Result> RunAsync
@@ -157,7 +165,8 @@ namespace Remora.Discord.Voice
             Snowflake channelID,
             bool isSelfMuted,
             bool isSelfDeafened,
-            CancellationToken ct
+            OpusApplicationDefinition audioOptimizationMethod = OpusApplicationDefinition.Audio,
+            CancellationToken ct = default
         )
         {
             try
@@ -166,6 +175,13 @@ namespace Remora.Discord.Voice
                 {
                     return new InvalidOperationError("Already running.");
                 }
+
+                Result<OpusEncoder> createEncoder = OpusEncoder.Create(audioOptimizationMethod);
+                if (!createEncoder.IsSuccess)
+                {
+                    return Result.FromError(createEncoder);
+                }
+                _encoder = createEncoder.Entity;
 
                 _connectionRequestParameters = new UpdateVoiceState
                 (
@@ -237,6 +253,68 @@ namespace Remora.Discord.Voice
         }
 
         /// <summary>
+        /// Transmits audio.
+        /// </summary>
+        /// <param name="pcm16AudioStream">A stream of PCM-16 audio data.</param>
+        /// <param name="ct">A <see cref="CancellationToken"/> used to stop the operation.</param>
+        /// <returns>A result representing the outcome of the operation.</returns>
+        public async Task<Result> TransmitAudioAsync(Stream pcm16AudioStream, CancellationToken ct = default)
+        {
+            if (ConnectionStatus is not GatewayConnectionStatus.Connected || !_dataService.IsConnected)
+            {
+                return new InvalidOperationError("Gateway is not connected.");
+            }
+
+            if (_isTransmitting)
+            {
+                return new InvalidOperationError("This client is already transmitting audio.");
+            }
+            _isTransmitting = true;
+
+            EnqueueCommand
+            (
+                new VoiceSpeaking
+                (
+                    _gatewayConnectionDetails!.VoiceState.UserID,
+                    SpeakingFlags.Microphone,
+                    _voiceServerConnectionDetails!.SSRC
+                )
+            );
+
+            // Give time for the audio to (hopefully!) arrive at the gateway.
+            await Task.Delay(20, ct).ConfigureAwait(false);
+
+            while (!ct.IsCancellationRequested)
+            {
+                throw new NotImplementedException();
+            }
+
+            EnqueueCommand
+            (
+                new VoiceSpeaking
+                (
+                    _gatewayConnectionDetails!.VoiceState.UserID,
+                    SpeakingFlags.None,
+                    _voiceServerConnectionDetails!.SSRC
+                )
+            );
+
+            _isTransmitting = false;
+            return Result.FromSuccess();
+        }
+
+        /// <inheritdoc />
+        public async ValueTask DisposeAsync()
+        {
+            if (ConnectionStatus is not GatewayConnectionStatus.Offline)
+            {
+                await StopAsync().ConfigureAwait(false);
+            }
+
+            _encoder?.Dispose();
+        }
+
+        /// <summary>
         /// Restores the client to a near pre-startup state, intended for when the client is stopping or has encountered a fatal error.
         /// </summary>
         /// <remarks>
@@ -251,6 +329,9 @@ namespace Remora.Discord.Voice
             }
 
             await Task.WhenAll(_sendTask, _receiveTask, _runLoopTask).ConfigureAwait(false);
+            _sendTask.Dispose();
+            _receiveTask.Dispose();
+            _runLoopTask.Dispose();
 
             _disconnectRequestedSource.Dispose();
             _disconnectRequestedSource = new CancellationTokenSource();
@@ -258,6 +339,9 @@ namespace Remora.Discord.Voice
             _connectionRequestParameters = null;
             _gatewayConnectionDetails = null;
             _voiceServerConnectionDetails = null;
+
+            _encoder?.Reset();
+            _isTransmitting = false;
 
             ConnectionStatus = GatewayConnectionStatus.Offline;
         }

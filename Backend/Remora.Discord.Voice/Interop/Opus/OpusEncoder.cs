@@ -172,7 +172,7 @@ namespace Remora.Discord.Voice.Interop.Opus
         }
 
         /// <summary>
-        /// Calculates the frame size of a PCM-16 (short[]) sample.
+        /// Calculates the frame size of a PCM sample.
         /// </summary>
         /// <param name="sampleSize">The size of the sample.</param>
         /// <returns>The frame size of the sample.</returns>
@@ -181,7 +181,7 @@ namespace Remora.Discord.Voice.Interop.Opus
             => sampleSize / DiscordChannelCount / sizeof(short); // Divide by the byte size of individual PCM-16 segments
 
         /// <summary>
-        /// Calculates the size of a PCM-16 (short[]) sample.
+        /// Calculates the size of a PCM sample.
         /// </summary>
         /// <param name="sampleDurationMS">The duration of the sample in milliseconds.</param>
         /// <returns>The size of the sample.</returns>

@@ -68,6 +68,7 @@ namespace Remora.Discord.Voice
         private readonly Random _random;
         private readonly HeartbeatData _heartbeatData;
         private readonly SemaphoreSlim _transmitSemaphore;
+        private readonly int _sampleSize;
         private readonly IMemoryOwner<byte> _transmitPcmBuffer;
         private readonly IMemoryOwner<byte> _transmitOpusBuffer;
 
@@ -140,8 +141,9 @@ namespace Remora.Discord.Voice
             _receiveTask = Task.FromResult(Result.FromSuccess());
 
             _transmitSemaphore = new SemaphoreSlim(1, 1);
-            _transmitPcmBuffer = MemoryPool<byte>.Shared.Rent(OpusEncoder.CalculateSampleSize(20));
-            _transmitOpusBuffer = MemoryPool<byte>.Shared.Rent(OpusEncoder.CalculateSampleSize(20));
+            _sampleSize = OpusEncoder.CalculateSampleSize(20);
+            _transmitPcmBuffer = MemoryPool<byte>.Shared.Rent(_sampleSize);
+            _transmitOpusBuffer = MemoryPool<byte>.Shared.Rent(_sampleSize);
 
             ConnectionStatus = GatewayConnectionStatus.Offline;
         }
@@ -291,26 +293,38 @@ namespace Remora.Discord.Voice
                 );
 
                 // Give time for the audio to arrive at the gateway.
-                await Task.Delay(_clientOptions.MinimumSafetyMargin, ct).ConfigureAwait(false);
+                await Task.Delay(_clientOptions.HeartbeatSafetyMargin * 10, ct).ConfigureAwait(false);
 
                 int sampleCount = 0;
                 sw.Start();
 
                 while (!ct.IsCancellationRequested)
                 {
-                    int pcmRead = await pcm16AudioStream.ReadAsync(_transmitPcmBuffer.Memory, ct).ConfigureAwait(false);
+                    int pcmRead = await pcm16AudioStream.ReadAsync(_transmitPcmBuffer.Memory[0.._sampleSize], ct).ConfigureAwait(false);
 
-                    Result<int> encodeResult = _encoder!.Encode(_transmitPcmBuffer.Memory.Span[..pcmRead], _transmitOpusBuffer.Memory.Span);
+                    Result<int> encodeResult = _encoder!.Encode(_transmitPcmBuffer.Memory.Span[..pcmRead], _transmitOpusBuffer.Memory.Span[..pcmRead]);
                     if (!encodeResult.IsSuccess)
                     {
                         return Result.FromError(encodeResult);
                     }
 
+                    Console.WriteLine("Opus Encoded: {0}", encodeResult.Entity);
+
                     long delay = Math.Max(0, pcmRead + ((pcmRead * sampleCount) - sw.ElapsedMilliseconds));
                     await Task.Delay(TimeSpan.FromMilliseconds(delay), ct).ConfigureAwait(false);
 
-                    _dataService.SendFrame(_transmitOpusBuffer.Memory.Span[..encodeResult.Entity], pcmRead);
+                    Result sendFrameResult = _dataService.SendFrame(_transmitOpusBuffer.Memory.Span[..encodeResult.Entity], pcmRead);
+                    if (!sendFrameResult.IsSuccess)
+                    {
+                        return sendFrameResult;
+                    }
+
                     sampleCount++;
+
+                    if (pcmRead < _sampleSize)
+                    {
+                        break;
+                    }
                 }
 
                 sw.Stop();
@@ -564,6 +578,7 @@ namespace Remora.Discord.Voice
                 }
 
                 _receivedPayloads.Enqueue(sessionDescription);
+                _dataService.Initialize(sessionDescription.Data.SecretKey);
 
                 break;
             }
@@ -952,6 +967,8 @@ namespace Remora.Discord.Voice
                         await Task.Delay(sleepTime, ct).ConfigureAwait(false);
                         continue;
                     }
+
+                    Console.WriteLine("Sending {0}", payload.GetType());
 
                     Result sendResult = await _transportService.SendPayloadAsync(payload, ct).ConfigureAwait(false);
                     if (sendResult.IsSuccess)

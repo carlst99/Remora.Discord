@@ -20,6 +20,7 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+using System.IO;
 using System.Threading.Tasks;
 using Remora.Commands.Attributes;
 using Remora.Commands.Groups;
@@ -80,7 +81,7 @@ namespace Remora.Discord.Samples.Caching.Commands
             (
                 _context.GuildID.Value,
                 connectTo.ID,
-                true,
+                false,
                 false,
                 OpusApplicationDefinition.Audio,
                 CancellationToken
@@ -95,7 +96,31 @@ namespace Remora.Discord.Samples.Caching.Commands
                 );
             }
 
-            return await _feedbackService.SendContextualSuccessAsync("Connected!", ct: CancellationToken);
+            /* Process? ffmpeg = Process.Start
+            (
+                new ProcessStartInfo
+                {
+                    FileName = "ffmpeg",
+                    Arguments = "-i sample.m4a -ac 2 -f s16le -ar 48000 pipe:1",
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false
+                }
+            );
+            ffmpeg!.BeginOutputReadLine(); */
+            await using FileStream fs = new("test", FileMode.Open);
+
+            Result transmitResult = await client.TransmitAudioAsync(fs, CancellationToken);
+            if (!transmitResult.IsSuccess)
+            {
+                return await _feedbackService.SendContextualErrorAsync
+                (
+                    $"Failed to start a voice session: {transmitResult.Error}",
+                    ct: CancellationToken
+                );
+            }
+
+            // await ffmpeg.WaitForExitAsync(CancellationToken);
+            return await _feedbackService.SendContextualSuccessAsync("Done!", ct: CancellationToken);
         }
 
         /// <summary>

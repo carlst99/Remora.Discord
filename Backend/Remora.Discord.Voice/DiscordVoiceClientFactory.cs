@@ -22,6 +22,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -36,7 +37,7 @@ namespace Remora.Discord.Voice
     /// Represents a factory for obtaining instances of a <see cref="DiscordVoiceClient"/>.
     /// </summary>
     [PublicAPI]
-    public sealed class DiscordVoiceClientFactory
+    public sealed class DiscordVoiceClientFactory : IAsyncDisposable
     {
         private readonly IServiceProvider _services;
         private readonly Dictionary<Snowflake, DiscordVoiceClient> _guildClients;
@@ -77,6 +78,15 @@ namespace Remora.Discord.Voice
             _guildClients.Add(guildID, voiceClient);
 
             return voiceClient;
+        }
+
+        /// <inheritdoc />
+        public async ValueTask DisposeAsync()
+        {
+            foreach (DiscordVoiceClient client in _guildClients.Values)
+            {
+                await client.DisposeAsync().ConfigureAwait(false);
+            }
         }
     }
 }

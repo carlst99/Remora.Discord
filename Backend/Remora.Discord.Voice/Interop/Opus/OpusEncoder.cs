@@ -61,7 +61,7 @@ namespace Remora.Discord.Voice.Interop.Opus
         /// <summary>
         /// Allocates and initializes an encoder state.
         /// </summary>
-        /// <param name="fs">Sampling rate of the input signal (Hz) This must be one of 8000, 12000, 16000, 24000, or 48000.</param>
+        /// <param name="fs">Sampling rate of the input signal (Hz). This must be one of 8000, 12000, 16000, 24000, or 48000.</param>
         /// <param name="channels">Number of channels (1 or 2) in the input signal.</param>
         /// <param name="application">Coding mode (see <see cref="OpusApplicationDefinition"/>).</param>
         /// <param name="error">Error result, if any (see <see cref="OpusErrorDefinition"/>).</param>
@@ -83,11 +83,11 @@ namespace Remora.Discord.Voice.Interop.Opus
         /// Sets a control parameter on an encoder.
         /// </summary>
         /// <param name="encoderState">A pointer to the encoder state.</param>
-        /// <param name="parameter">The parameter to set.</param>
+        /// <param name="request">The parameter to set.</param>
         /// <param name="value">The value to set the parameter to.</param>
         /// <returns>An <see cref="OpusErrorDefinition"/> result.</returns>
         [DllImport(OpusLibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "opus_encoder_ctl")]
-        private static extern OpusErrorDefinition _OpusEncoderSetCtl(IntPtr encoderState, OpusControlRequestDefinition parameter, int value);
+        private static extern OpusErrorDefinition _OpusEncoderSetCtl(IntPtr encoderState, OpusControlRequestDefinition request, int value);
 
         /// <summary>
         /// Frees an encoder allocation by <see cref="opus_encoder_create(int, int, int, out OpusErrorDefinition)"/>.
@@ -172,10 +172,10 @@ namespace Remora.Discord.Voice.Interop.Opus
         }
 
         /// <summary>
-        /// Calculates the frame size of a PCM sample.
+        /// Calculates the frame size of a PCM sample in bytes.
         /// </summary>
-        /// <param name="sampleSize">The size of the sample.</param>
-        /// <returns>The frame size of the sample.</returns>
+        /// <param name="sampleSize">The byte-size of the sample.</param>
+        /// <returns>The frame size of the sample in bytes.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int CalculateFrameSize(int sampleSize)
             => sampleSize / DiscordChannelCount / sizeof(short); // Divide by the byte size of individual PCM-16 segments
@@ -183,17 +183,17 @@ namespace Remora.Discord.Voice.Interop.Opus
         /// <summary>
         /// Calculates the duration in milliseconds of a PCM sample.
         /// </summary>
-        /// <param name="sampleSize">The size of the sample.</param>
+        /// <param name="sampleSize">The byte-size of the sample.</param>
         /// <returns>The duration in milliseconds.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int CalculateSampleDuration(int sampleSize)
             => sampleSize / (DiscordSampleRate / 1000) / DiscordChannelCount / 2; // Divide by the byte size of individual PCM-16 segments
 
         /// <summary>
-        /// Calculates the size of a PCM sample.
+        /// Calculates the size of a PCM sample in bytes.
         /// </summary>
         /// <param name="sampleDurationMS">The duration of the sample in milliseconds.</param>
-        /// <returns>The size of the sample.</returns>
+        /// <returns>The size of the sample in bytes.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int CalculateSampleSize(int sampleDurationMS)
          => sampleDurationMS * DiscordChannelCount * (DiscordSampleRate / 1000) * sizeof(short); // Multiply by the byte size of individual PCM-16 segments

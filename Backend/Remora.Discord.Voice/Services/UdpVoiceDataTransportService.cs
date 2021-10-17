@@ -211,27 +211,28 @@ namespace Remora.Discord.Voice.Services
 
                 const int rtpHeaderSize = 12;
                 int encryptedFrameSize = frame.Length + (int)Sodium.MacSize;
-                int payloadLength = rtpHeaderSize + encryptedFrameSize; // 12 = RTP Header size
-                payloadLength += _encryptionMode switch
+
+                int packetSize = rtpHeaderSize + encryptedFrameSize;
+                packetSize += _encryptionMode switch
                 {
                     SupportedEncryptionMode.XSalsa20_Poly1305_Suffix => (int)Sodium.NonceSize,
                     SupportedEncryptionMode.XSalsa20_Poly1305_Lite => sizeof(uint),
                     _ => 0
                 };
 
-                Span<byte> payload = stackalloc byte[payloadLength];
+                Span<byte> packet = stackalloc byte[packetSize];
                 Span<byte> nonce = stackalloc byte[(int)Sodium.NonceSize];
 
-                WriteRtpHeader(payload, pcm16Length);
-                WriteNonce(nonce, payload, payload[0..rtpHeaderSize]);
+                WriteRtpHeader(packet, pcm16Length);
+                WriteNonce(nonce, packet, packet[0..rtpHeaderSize]);
 
-                Result encryptionResult = _encryptor!.Encrypt(frame, payload.Slice(rtpHeaderSize, encryptedFrameSize), nonce);
+                Result encryptionResult = _encryptor!.Encrypt(frame, packet.Slice(rtpHeaderSize, encryptedFrameSize), nonce);
                 if (!encryptionResult.IsSuccess)
                 {
                     return encryptionResult;
                 }
 
-                _client.Send(payload.ToArray(), payload.Length);
+                _client.Send(packet.ToArray(), packet.Length);
 
                 return Result.FromSuccess();
             }

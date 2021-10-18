@@ -271,6 +271,7 @@ namespace Remora.Discord.Voice
         public async Task<Result> TransmitAudioAsync(Stream pcm16AudioStream, CancellationToken ct = default)
         {
             bool needsRelease = false;
+            uint ssrc = 0;
 
             try
             {
@@ -283,7 +284,9 @@ namespace Remora.Discord.Voice
                 {
                     return new InvalidOperationError("This client is already transmitting audio.");
                 }
+
                 needsRelease = true;
+                ssrc = _voiceServerConnectionDetails!.SSRC;
 
                 // From https://github.com/DSharpPlus/DSharpPlus/blob/master/DSharpPlus.VoiceNext/VoiceNextConnection.cs
                 double synchronizerTicks = Stopwatch.GetTimestamp();
@@ -296,7 +299,7 @@ namespace Remora.Discord.Voice
                     (
                         SpeakingFlags.Microphone,
                         0,
-                        _voiceServerConnectionDetails!.SSRC
+                        ssrc
                     )
                 );
 
@@ -351,7 +354,7 @@ namespace Remora.Discord.Voice
                     (
                         SpeakingFlags.None,
                         0,
-                        _voiceServerConnectionDetails!.SSRC
+                        ssrc
                     )
                 );
 

@@ -35,7 +35,6 @@ using Remora.Discord.API.Gateway.Commands;
 using Remora.Discord.Core;
 using Remora.Discord.Gateway;
 using Remora.Discord.Voice.Abstractions.Objects;
-using Remora.Discord.Voice.Abstractions.Objects.Bidrectional;
 using Remora.Discord.Voice.Abstractions.Objects.Commands;
 using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Objects.Events.Heartbeats;
@@ -45,7 +44,6 @@ using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Errors;
 using Remora.Discord.Voice.Interop.Opus;
 using Remora.Discord.Voice.Objects;
-using Remora.Discord.Voice.Objects.Bidirectional;
 using Remora.Discord.Voice.Objects.Commands.ConnectingResuming;
 using Remora.Discord.Voice.Objects.Commands.Heartbeats;
 using Remora.Discord.Voice.Objects.Commands.Protocols;
@@ -59,6 +57,11 @@ namespace Remora.Discord.Voice
     [PublicAPI]
     public sealed class DiscordVoiceClient : IAsyncDisposable
     {
+        /// <summary>
+        /// Gets the default sample duration in milliseconds.
+        /// </summary>
+        private const int SampleDurationMS = 20;
+
         private readonly ILogger<DiscordVoiceClient> _logger;
         private readonly DiscordGatewayClient _gatewayClient;
         private readonly DiscordVoiceClientOptions _clientOptions;
@@ -141,7 +144,7 @@ namespace Remora.Discord.Voice
             _receiveTask = Task.FromResult(Result.FromSuccess());
 
             _transmitSemaphore = new SemaphoreSlim(1, 1);
-            _sampleSize = OpusEncoder.CalculateSampleSize(20);
+            _sampleSize = OpusEncoder.CalculateSampleSize(SampleDurationMS);
             _transmitPcmBuffer = MemoryPool<byte>.Shared.Rent(_sampleSize);
             _transmitOpusBuffer = MemoryPool<byte>.Shared.Rent(_sampleSize);
 
@@ -286,7 +289,17 @@ namespace Remora.Discord.Voice
                 double synchronizerResolution = Stopwatch.Frequency * 0.005;
                 double tickResolution = 10_000_000.0 / Stopwatch.Frequency;
 
-                while (!ct.IsCancellationRequested)
+                EnqueueCommand
+                (
+                    new VoiceSpeakingCommand
+                    (
+                        SpeakingFlags.Microphone,
+                        0,
+                        _voiceServerConnectionDetails!.SSRC
+                    )
+                );
+
+                while (!ct.IsCancellationRequested && ConnectionStatus is GatewayConnectionStatus.Connected)
                 {
                     int pcmRead = await pcm16AudioStream.ReadAsync(_transmitPcmBuffer.Memory[0.._sampleSize], ct).ConfigureAwait(false);
 
@@ -299,7 +312,7 @@ namespace Remora.Discord.Voice
                     Console.WriteLine("Opus Encoded: {0}", encodeResult.Entity);
 
                     // From https://github.com/DSharpPlus/DSharpPlus/blob/master/DSharpPlus.VoiceNext/VoiceNextConnection.cs
-                    int durationModifier = OpusEncoder.CalculateSampleDuration(pcmRead);
+                    /*int durationModifier = OpusEncoder.CalculateSampleDuration(pcmRead);
                     double cts = Math.Max(Stopwatch.GetTimestamp() - synchronizerTicks, 0);
                     if (cts < synchronizerResolution * durationModifier)
                     {
@@ -309,17 +322,9 @@ namespace Remora.Discord.Voice
                             ct
                         ).ConfigureAwait(false);
                     }
-                    synchronizerTicks += synchronizerResolution * durationModifier;
+                    synchronizerTicks += synchronizerResolution * durationModifier;*/
 
-                    EnqueueCommand
-                    (
-                        new VoiceSpeaking
-                        (
-                            _gatewayConnectionDetails!.VoiceState.UserID,
-                            SpeakingFlags.Microphone,
-                            _voiceServerConnectionDetails!.SSRC
-                        )
-                    );
+                    await Task.Delay((int)(SampleDurationMS * 0.75), ct).ConfigureAwait(false); // TODO: Improve, this is naive
 
                     Result sendFrameResult = _dataService.SendFrame(_transmitOpusBuffer.Memory.Span[..encodeResult.Entity], pcmRead);
                     if (!sendFrameResult.IsSuccess)
@@ -335,10 +340,10 @@ namespace Remora.Discord.Voice
 
                 EnqueueCommand
                 (
-                    new VoiceSpeaking
+                    new VoiceSpeakingCommand
                     (
-                        _gatewayConnectionDetails!.VoiceState.UserID,
                         SpeakingFlags.None,
+                        0,
                         _voiceServerConnectionDetails!.SSRC
                     )
                 );
@@ -521,8 +526,6 @@ namespace Remora.Discord.Voice
             {
                 return Result.FromError(selectedEncryptionMode);
             }
-
-            Console.WriteLine("Selected encryption mode: " + selectedEncryptionMode.Entity);
 
             Result<IIPDiscoveryResponse> voiceServerConnectResult = await _dataService.ConnectAsync
             (
@@ -868,6 +871,7 @@ namespace Remora.Discord.Voice
                         {
                             case VoiceGatewayCloseStatus.AlreadyAuthenticated:
                             case VoiceGatewayCloseStatus.FailedToDecodePayload:
+                            case VoiceGatewayCloseStatus.Ratelimited:
                             case VoiceGatewayCloseStatus.UnknownEncryptionMode:
                             case VoiceGatewayCloseStatus.UnknownProtocol:
                             case VoiceGatewayCloseStatus.UnknownOperationCode:

@@ -25,7 +25,6 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Remora.Discord.Voice.Abstractions.Objects;
-using Remora.Discord.Voice.Abstractions.Objects.Bidrectional;
 using Remora.Discord.Voice.Abstractions.Objects.Commands.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Objects.Commands.Heartbeats;
 using Remora.Discord.Voice.Abstractions.Objects.Commands.Protocols;
@@ -85,7 +84,7 @@ namespace Remora.Discord.Voice.Json
                 // Bidirectional
                 VoiceOperationCode.Heartbeat => DeserializePayload<IVoiceHeartbeat>(realDocument, options),
                 VoiceOperationCode.HeartbeatAcknowledgement => DeserializePayload<IVoiceHeartbeatAcknowledge>(realDocument, options),
-                VoiceOperationCode.Speaking => DeserializePayload<IVoiceSpeaking>(realDocument, options),
+                VoiceOperationCode.Speaking => DeserializePayload<IVoiceSpeakingEvent>(realDocument, options),
 
                 // Commands
                 VoiceOperationCode.Identify => DeserializePayload<IVoiceIdentify>(realDocument, options),
@@ -166,10 +165,6 @@ namespace Remora.Discord.Voice.Json
 
             return dataType switch
             {
-                // Bidirectional
-                _ when typeof(IVoiceSpeaking).IsAssignableFrom(dataType)
-                => VoiceOperationCode.Speaking,
-
                 // Commands
                 _ when typeof(IVoiceHeartbeat).IsAssignableFrom(dataType)
                 => VoiceOperationCode.Heartbeat,
@@ -182,6 +177,9 @@ namespace Remora.Discord.Voice.Json
 
                 _ when typeof(IVoiceSelectProtocol).IsAssignableFrom(dataType)
                 => VoiceOperationCode.SelectProtocol,
+
+                _ when typeof(IVoiceSpeakingCommand).IsAssignableFrom(dataType)
+                => VoiceOperationCode.Speaking,
 
                 // Events
                 _ when typeof(IVoiceClientDisconnect).IsAssignableFrom(dataType)

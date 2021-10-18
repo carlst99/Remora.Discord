@@ -1,5 +1,5 @@
 ﻿//
-//  IVoiceSpeaking.cs
+//  VoiceSpeakingCommand.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -21,31 +21,17 @@
 //
 
 using JetBrains.Annotations;
-using Remora.Discord.Core;
-using Remora.Discord.Voice.Abstractions.Objects.Commands;
-using Remora.Discord.Voice.Abstractions.Objects.Events;
+using Remora.Discord.Voice.Abstractions.Objects;
+using Remora.Discord.Voice.Abstractions.Objects.Commands.Protocols;
 
-namespace Remora.Discord.Voice.Abstractions.Objects.Bidrectional
+namespace Remora.Discord.Voice.Objects.Commands.Protocols
 {
-    /// <summary>
-    /// Represents data that a client is speaking.
-    /// </summary>
+    /// <inheritdoc cref="IVoiceSpeakingCommand"/>
     [PublicAPI]
-    public interface IVoiceSpeaking : IVoiceGatewayCommand, IVoiceGatewayEvent
-    {
-        /// <summary>
-        /// Gets the ID of the user who speaking.
-        /// </summary>
-        Snowflake UserID { get; }
-
-        /// <summary>
-        /// Gets the speaker flags.
-        /// </summary>
-        SpeakingFlags Speaking { get; }
-
-        /// <summary>
-        /// Gets the synchronization source ID that this speech event is associated with.
-        /// </summary>
-        uint SSRC { get; }
-    }
+    public record VoiceSpeakingCommand
+    (
+        SpeakingFlags Speaking,
+        int Delay,
+        uint SSRC
+    ) : IVoiceSpeakingCommand;
 }

@@ -61,6 +61,11 @@ namespace Remora.Discord.Voice.Abstractions.Objects
         SessionNoLongerValid = 4006,
 
         /// <summary>
+        /// Your session has been ratelimited.
+        /// </summary>
+        Ratelimited = 4008,
+
+        /// <summary>
         /// Your session timed out.
         /// </summary>
         SessionTimeout = 4009,

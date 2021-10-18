@@ -28,7 +28,6 @@ using Microsoft.IO;
 using Remora.Discord.API.Extensions;
 using Remora.Discord.API.Json;
 using Remora.Discord.Gateway.Extensions;
-using Remora.Discord.Voice.Abstractions.Objects.Bidrectional;
 using Remora.Discord.Voice.Abstractions.Objects.Commands.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Objects.Commands.Heartbeats;
 using Remora.Discord.Voice.Abstractions.Objects.Commands.Protocols;
@@ -38,7 +37,6 @@ using Remora.Discord.Voice.Abstractions.Objects.Events.Heartbeats;
 using Remora.Discord.Voice.Abstractions.Objects.Events.Sessions;
 using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Json;
-using Remora.Discord.Voice.Objects.Bidirectional;
 using Remora.Discord.Voice.Objects.Commands.ConnectingResuming;
 using Remora.Discord.Voice.Objects.Commands.Heartbeats;
 using Remora.Discord.Voice.Objects.Commands.Protocols;
@@ -85,25 +83,12 @@ namespace Remora.Discord.Voice.Extensions
                         options.Converters.Add(new VoicePayloadConverter());
 
                         options
-                            .AddVoiceGatewayBidirectionalConverters()
                             .AddVoiceGatewayCommandConverters()
                             .AddVoiceGatewayEventConverters();
                     }
                 );
 
             return serviceCollection;
-        }
-
-        /// <summary>
-        /// Adds the JSON converters that handle bidirectional gateway payloads.
-        /// </summary>
-        /// <param name="options">The serializer options.</param>
-        /// <returns>The options, with the converters added.</returns>
-        private static JsonSerializerOptions AddVoiceGatewayBidirectionalConverters(this JsonSerializerOptions options)
-        {
-            options.AddDataObjectConverter<IVoiceSpeaking, VoiceSpeaking>();
-
-            return options;
         }
 
         /// <summary>
@@ -123,6 +108,7 @@ namespace Remora.Discord.Voice.Extensions
             // Protocols
             options.AddDataObjectConverter<IVoiceProtocolData, VoiceProtocolData>();
             options.AddDataObjectConverter<IVoiceSelectProtocol, VoiceSelectProtocol>();
+            options.AddDataObjectConverter<IVoiceSpeakingCommand, VoiceSpeakingCommand>();
 
             return options;
         }
@@ -145,8 +131,11 @@ namespace Remora.Discord.Voice.Extensions
             options.AddDataObjectConverter<IVoiceHeartbeatAcknowledge, VoiceHeartbeatAcknowledge>();
 
             // Sessions
-            options.AddDataObjectConverter<IVoiceClientDisconnect, VoiceClientDisconnect>();
             options.AddDataObjectConverter<IVoiceSessionDescription, VoiceSessionDescription>();
+
+            // Clients
+            options.AddDataObjectConverter<IVoiceClientDisconnect, VoiceClientDisconnect>();
+            options.AddDataObjectConverter<IVoiceSpeakingEvent, VoiceSpeakingEvent>();
 
             return options;
         }

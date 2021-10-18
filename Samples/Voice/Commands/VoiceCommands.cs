@@ -107,7 +107,7 @@ namespace Remora.Discord.Samples.Caching.Commands
                 }
             );
             ffmpeg!.BeginOutputReadLine(); */
-            await using FileStream fs = new("test", FileMode.Open);
+            await using FileStream fs = new("output", FileMode.Open);
 
             Result transmitResult = await client.TransmitAudioAsync(fs, CancellationToken);
             if (!transmitResult.IsSuccess)
@@ -156,7 +156,8 @@ namespace Remora.Discord.Samples.Caching.Commands
             (
                 $"Version: {Sodium.Version ?? "Unknown"}" +
                 $"\nNonce Size: {Sodium.NonceSize}" +
-                $"\nMAC Size: {Sodium.MacSize}",
+                $"\nMAC Size: {Sodium.MacSize}" +
+                $"\nKey Size: {Sodium.KeySize}",
                 ct: CancellationToken
             );
         }

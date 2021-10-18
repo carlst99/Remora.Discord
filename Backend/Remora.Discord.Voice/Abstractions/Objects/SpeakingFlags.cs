@@ -1,5 +1,5 @@
 ﻿//
-//  VoiceSpeaking.cs
+//  SpeakingFlags.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -20,18 +20,35 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+using System;
 using JetBrains.Annotations;
-using Remora.Discord.Core;
-using Remora.Discord.Voice.Abstractions.Objects.Bidrectional;
 
-namespace Remora.Discord.Voice.Objects.Bidirectional
+namespace Remora.Discord.Voice.Abstractions.Objects
 {
-    /// <inheritdoc cref="IVoiceSpeaking" />
-    [PublicAPI]
-    public record VoiceSpeaking
-    (
-        Snowflake UserID,
-        SpeakingFlags Speaking,
-        uint SSRC
-    ) : IVoiceSpeaking;
+    /// <summary>
+    /// Enumerates various speaker flags to indicate how voice data is being sent.
+    /// </summary>
+    [PublicAPI, Flags]
+    public enum SpeakingFlags
+    {
+        /// <summary>
+        /// No transmission of audio.
+        /// </summary>
+        None = 0,
+
+        /// <summary>
+        /// Normal transmission of voice audio.
+        /// </summary>
+        Microphone = 1 << 0,
+
+        /// <summary>
+        /// Transmission of context audio for video. No speaking indicator will be shown.
+        /// </summary>
+        Soundshare = 1 << 1,
+
+        /// <summary>
+        /// Priority speech. Audio of other speakers will be lowered.
+        /// </summary>
+        Priority = 1 << 2
+    }
 }

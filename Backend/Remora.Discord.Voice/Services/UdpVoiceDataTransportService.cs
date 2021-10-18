@@ -209,6 +209,11 @@ namespace Remora.Discord.Voice.Services
                     return new InvalidOperationError("The transport service must be connected before frames can be sent.");
                 }
 
+                if (_encryptor is null)
+                {
+                    return new InvalidOperationError($"The {nameof(Initialize)} function must be called before frames can be sent.");
+                }
+
                 const int rtpHeaderSize = 12;
                 int encryptedFrameSize = frame.Length + (int)Sodium.MacSize;
 
@@ -226,7 +231,7 @@ namespace Remora.Discord.Voice.Services
                 WriteRtpHeader(packet, pcm16Length);
                 WriteNonce(nonce, packet, packet[0..rtpHeaderSize]);
 
-                Result encryptionResult = _encryptor!.Encrypt(frame, packet.Slice(rtpHeaderSize, encryptedFrameSize), nonce);
+                Result encryptionResult = _encryptor.Encrypt(frame, packet.Slice(rtpHeaderSize, encryptedFrameSize), nonce);
                 if (!encryptionResult.IsSuccess)
                 {
                     return encryptionResult;

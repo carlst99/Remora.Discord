@@ -36,7 +36,7 @@ namespace Remora.Discord.Voice.Abstractions.Objects.Commands.Protocols
         public SpeakingFlags Speaking { get; }
 
         /// <summary>
-        /// Gets a defunct, but required field.
+        /// Gets a defunct, but required field. Set to a value of 0 when sending.
         /// </summary>
         public int Delay { get; }
 

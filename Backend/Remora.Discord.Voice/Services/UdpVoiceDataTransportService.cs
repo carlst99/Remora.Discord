@@ -21,6 +21,7 @@
 //
 
 using System;
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Net.Sockets;
@@ -60,6 +61,14 @@ namespace Remora.Discord.Voice.Services
         private ushort _sequence;
         private uint _timestamp;
 
+        /// <inheritdoc />
+        public bool IsConnected { get; private set; }
+
+        /// <summary>
+        /// Gets a value indicating whether or not this instance has been disposed.
+        /// </summary>
+        public bool IsDisposed { get; private set; }
+
         static UdpVoiceDataTransportService()
         {
             SupportedEncryptionModes = new Dictionary<string, SupportedEncryptionMode>()
@@ -91,14 +100,6 @@ namespace Remora.Discord.Voice.Services
         }
 
         /// <inheritdoc />
-        public bool IsConnected { get; private set; }
-
-        /// <summary>
-        /// Gets a value indicating whether or not this instance has been disposed.
-        /// </summary>
-        public bool IsDisposed { get; private set; }
-
-        /// <inheritdoc />
         public Result<string> SelectSupportedEncryptionMode(IReadOnlyList<string> encryptionModes)
         {
             foreach (string mode in encryptionModes)
@@ -122,13 +123,12 @@ namespace Remora.Discord.Voice.Services
 
 #pragma warning disable SA1305 // Field names should not use Hungarian notation
 
-                // This should only happen once every while, so we're not concerned about renting from a pool.
-                byte[] ipDiscoveryBuffer = new byte[74];
+                using IMemoryOwner<byte> ipDiscoveryBuffer = MemoryPool<byte>.Shared.Rent(74);
 
 #pragma warning restore SA1305 // Field names should not use Hungarian notation
 
-                new IPDiscoveryRequest(voiceServerDetails.SSRC).Pack(ipDiscoveryBuffer);
-                await _client.SendAsync(ipDiscoveryBuffer, ipDiscoveryBuffer.Length).ConfigureAwait(false);
+                new IPDiscoveryRequest(voiceServerDetails.SSRC).Pack(ipDiscoveryBuffer.Memory.Span);
+                await _client.Client.SendAsync(ipDiscoveryBuffer.Memory[0..74], SocketFlags.None, ct).ConfigureAwait(false);
 
                 Result<UdpReceiveResult> discoveryResult = await _client.ReceiveAsync()
                     .WithTimeout(TimeSpan.FromMilliseconds(1000), ct)
@@ -183,17 +183,22 @@ namespace Remora.Discord.Voice.Services
         }
 
         /// <inheritdoc />
-        public Task<Result> DisconnectAsync(CancellationToken ct = default)
+        public Result Disconnect()
         {
-            throw new NotImplementedException();
+            _ssrc = 0;
+            _encryptor = null;
+            IsConnected = false;
+
+            return Result.FromSuccess();
         }
 
         /// <inheritdoc />
-        public async ValueTask<Result<ReadOnlyMemory<byte>>> ReceiveOpusFrameAsync(CancellationToken ct = default)
+        public async ValueTask<Result<ReadOnlyMemory<byte>>> ReceiveFrameAsync(CancellationToken ct = default)
         {
-            if (!IsConnected)
+            Result stateCheck = ReadyForTransmitReceive();
+            if (!stateCheck.IsSuccess)
             {
-                return new InvalidOperationError("The transport service must be connected before frames can be received.");
+                return Result<ReadOnlyMemory<byte>>.FromError(stateCheck);
             }
 
             throw new NotImplementedException();
@@ -204,14 +209,10 @@ namespace Remora.Discord.Voice.Services
         {
             try
             {
-                if (!IsConnected)
+                Result stateCheck = ReadyForTransmitReceive();
+                if (!stateCheck.IsSuccess)
                 {
-                    return new InvalidOperationError("The transport service must be connected before frames can be sent.");
-                }
-
-                if (_encryptor is null)
-                {
-                    return new InvalidOperationError($"The {nameof(Initialize)} function must be called before frames can be sent.");
+                    return stateCheck;
                 }
 
                 const int rtpHeaderSize = 12;
@@ -231,13 +232,13 @@ namespace Remora.Discord.Voice.Services
                 WriteRtpHeader(packet, pcm16Length);
                 WriteNonce(nonce, packet, packet[0..rtpHeaderSize]);
 
-                Result encryptionResult = _encryptor.Encrypt(frame, packet.Slice(rtpHeaderSize, encryptedFrameSize), nonce);
+                Result encryptionResult = _encryptor!.Encrypt(frame, packet.Slice(rtpHeaderSize, encryptedFrameSize), nonce);
                 if (!encryptionResult.IsSuccess)
                 {
                     return encryptionResult;
                 }
 
-                _client.Send(packet.ToArray(), packet.Length);
+                _client.Client.Send(packet);
 
                 return Result.FromSuccess();
             }
@@ -253,6 +254,25 @@ namespace Remora.Discord.Voice.Services
             // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
             Dispose(disposing: true);
             GC.SuppressFinalize(this);
+        }
+
+        /// <summary>
+        /// Checks the state of this instance to ensure it is ready to send and receive frames.
+        /// </summary>
+        /// <returns>A result representing the outcome of the operation.</returns>
+        private Result ReadyForTransmitReceive()
+        {
+            if (!IsConnected)
+            {
+                return new InvalidOperationError("The transport service must be connected before frames can be sent.");
+            }
+
+            if (_encryptor is null)
+            {
+                return new InvalidOperationError("The transport function must be initialized before frames can be sent.");
+            }
+
+            return Result.FromSuccess();
         }
 
         /// <summary>

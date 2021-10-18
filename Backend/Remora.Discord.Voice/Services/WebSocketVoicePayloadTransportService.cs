@@ -198,7 +198,7 @@ namespace Remora.Discord.Voice.Services
             }
 
             await using MemoryStream ms = _memoryStreamManager.GetStream();
-            IMemoryOwner<byte> segmentBufferOwner = MemoryPool<byte>.Shared.Rent(MaxPayloadSize);
+            using IMemoryOwner<byte> segmentBufferOwner = MemoryPool<byte>.Shared.Rent(MaxPayloadSize);
             bool semaphoreReleased = false;
 
             try
@@ -252,8 +252,6 @@ namespace Remora.Discord.Voice.Services
             }
             finally
             {
-                segmentBufferOwner.Dispose();
-
                 if (!semaphoreReleased)
                 {
                     _payloadReceiveSemaphore.Release();

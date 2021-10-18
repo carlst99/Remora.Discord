@@ -49,7 +49,7 @@ namespace Remora.Discord.Voice.Abstractions.Services
     public interface IVoiceDataTranportService
     {
         /// <summary>
-        /// Gets a value indicating whether the service has successfully connected.
+        /// Gets a value indicating whether or not the service has been connected.
         /// </summary>
         bool IsConnected { get; }
 
@@ -76,14 +76,14 @@ namespace Remora.Discord.Voice.Abstractions.Services
         Result Initialize(IReadOnlyList<byte> key);
 
         /// <summary>
-        /// Asynchronously sends an opus data frame.
+        /// Sends an audio data frame.
         /// </summary>
         /// <remarks>
-        /// This method should be thread-safe in conjunction with <see cref="ReceiveOpusFrameAsync"/>.
+        /// This method should be thread-safe in conjunction with <see cref="ReceiveFrameAsync"/>.
         /// </remarks>
         /// <param name="frame">The data frame.</param>
-        /// <param name="pcm16Length">The length of the PCM-16 data that the frame was constructed from.</param>
-        /// <returns>A send result which may or may not have succeeded.</returns>
+        /// <param name="pcm16Length">The byte length of the PCM-16 data that the frame was constructed from.</param>
+        /// <returns>A result representing the outcome of the operation.</returns>
         Result SendFrame(ReadOnlySpan<byte> frame, int pcm16Length);
 
         /// <summary>
@@ -94,13 +94,12 @@ namespace Remora.Discord.Voice.Abstractions.Services
         /// </remarks>
         /// <param name="ct">The cancellation token for this operation.</param>
         /// <returns>A receive result which may or may not have succeeded.</returns>
-        ValueTask<Result<ReadOnlyMemory<byte>>> ReceiveOpusFrameAsync(CancellationToken ct = default);
+        ValueTask<Result<ReadOnlyMemory<byte>>> ReceiveFrameAsync(CancellationToken ct = default);
 
         /// <summary>
         /// Disconnects from the transport endpoint.
         /// </summary>
-        /// <param name="ct">The cancellation token for this operation.</param>
-        /// <returns>A result which may or may not have succeeded.</returns>
-        Task<Result> DisconnectAsync(CancellationToken ct = default);
+        /// <returns>A result representing the outcome of the operation.</returns>
+        Result Disconnect();
     }
 }

@@ -60,7 +60,7 @@ namespace Remora.Discord.Voice
         /// <summary>
         /// Gets the default sample duration in milliseconds.
         /// </summary>
-        private const int SampleDurationMS = 20;
+        private const int SampleDurationMS = 40;
 
         private readonly ILogger<DiscordVoiceClient> _logger;
         private readonly DiscordGatewayClient _gatewayClient;
@@ -206,6 +206,7 @@ namespace Remora.Discord.Voice
                 Result connectionResult = await ConnectAsync(_connectionRequestParameters, ct).ConfigureAwait(false);
                 if (!connectionResult.IsSuccess)
                 {
+                    SendDisconnectVoiceStateUpdate(guildID);
                     await CleanupAsync().ConfigureAwait(false);
                     return connectionResult;
                 }
@@ -303,13 +304,16 @@ namespace Remora.Discord.Voice
                 {
                     int pcmRead = await pcm16AudioStream.ReadAsync(_transmitPcmBuffer.Memory[0.._sampleSize], ct).ConfigureAwait(false);
 
+                    if (pcmRead < _sampleSize)
+                    {
+                        break; // TODO: Does this cut off audio in some cases?
+                    }
+
                     Result<int> encodeResult = _encoder!.Encode(_transmitPcmBuffer.Memory.Span[..pcmRead], _transmitOpusBuffer.Memory.Span[..pcmRead]);
                     if (!encodeResult.IsSuccess)
                     {
                         return Result.FromError(encodeResult);
                     }
-
-                    Console.WriteLine("Opus Encoded: {0}", encodeResult.Entity);
 
                     // From https://github.com/DSharpPlus/DSharpPlus/blob/master/DSharpPlus.VoiceNext/VoiceNextConnection.cs
                     /*int durationModifier = OpusEncoder.CalculateSampleDuration(pcmRead);
@@ -324,20 +328,23 @@ namespace Remora.Discord.Voice
                     }
                     synchronizerTicks += synchronizerResolution * durationModifier;*/
 
-                    await Task.Delay((int)(SampleDurationMS * 0.75), ct).ConfigureAwait(false); // TODO: Improve, this is naive
+                    await Task.Delay((int)(SampleDurationMS * 0.75), ct).ConfigureAwait(false); // TODO: Improve, this is naive. Only works well with 40ms durations and higher
 
                     Result sendFrameResult = _dataService.SendFrame(_transmitOpusBuffer.Memory.Span[..encodeResult.Entity], pcmRead);
                     if (!sendFrameResult.IsSuccess)
                     {
                         return sendFrameResult;
                     }
-
-                    if (pcmRead < _sampleSize)
-                    {
-                        break;
-                    }
                 }
 
+                return Result.FromSuccess();
+            }
+            catch (Exception ex)
+            {
+                return ex;
+            }
+            finally
+            {
                 EnqueueCommand
                 (
                     new VoiceSpeakingCommand
@@ -348,14 +355,6 @@ namespace Remora.Discord.Voice
                     )
                 );
 
-                return Result.FromSuccess();
-            }
-            catch (Exception ex)
-            {
-                return ex;
-            }
-            finally
-            {
                 if (needsRelease)
                 {
                     _transmitSemaphore.Release();
@@ -401,7 +400,6 @@ namespace Remora.Discord.Voice
             _connectionRequestParameters = null;
             _gatewayConnectionDetails = null;
             _voiceServerConnectionDetails = null;
-
             _encoder?.Reset();
 
             ConnectionStatus = GatewayConnectionStatus.Offline;
@@ -1104,8 +1102,6 @@ namespace Remora.Discord.Voice
                             sendHeartbeatResult
                         );
                     }
-
-                    Console.WriteLine("Sent heartbeat " + _heartbeatData.LastSentNonce.ToString());
 
                     _heartbeatData.LastSentTime = DateTimeOffset.UtcNow;
                 }

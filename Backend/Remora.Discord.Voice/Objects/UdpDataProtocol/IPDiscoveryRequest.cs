@@ -22,6 +22,7 @@
 
 using System;
 using System.Buffers.Binary;
+using JetBrains.Annotations;
 
 namespace Remora.Discord.Voice.Objects.UdpDataProtocol
 {
@@ -29,6 +30,7 @@ namespace Remora.Discord.Voice.Objects.UdpDataProtocol
     /// Represents an IP discovery request packet.
     /// </summary>
     /// <param name="SSRC">The SSRC.</param>
+    [PublicAPI]
     public record IPDiscoveryRequest
     (
         uint SSRC

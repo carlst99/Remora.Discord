@@ -118,29 +118,31 @@ namespace Remora.Discord.Voice.Services
         /// <inheritdoc />
         public async Task<Result<IPDiscoveryResponse>> ConnectAsync(IVoiceReady voiceServerDetails, CancellationToken ct = default)
         {
+            const int discoveryBufferSize = 74;
+
             try
             {
                 _client.Connect(voiceServerDetails.IP, voiceServerDetails.Port);
 
 #pragma warning disable SA1305 // Field names should not use Hungarian notation
 
-                using IMemoryOwner<byte> ipDiscoveryBuffer = MemoryPool<byte>.Shared.Rent(74);
+                using IMemoryOwner<byte> ipDiscoveryBuffer = MemoryPool<byte>.Shared.Rent(discoveryBufferSize);
 
 #pragma warning restore SA1305 // Field names should not use Hungarian notation
 
                 new IPDiscoveryRequest(voiceServerDetails.SSRC).Pack(ipDiscoveryBuffer.Memory.Span);
-                await _client.Client.SendAsync(ipDiscoveryBuffer.Memory[0..74], SocketFlags.None, ct).ConfigureAwait(false);
+                await _client.Client.SendAsync(ipDiscoveryBuffer.Memory[0..discoveryBufferSize], SocketFlags.None, ct).ConfigureAwait(false);
 
-                Result<UdpReceiveResult> discoveryResult = await _client.ReceiveAsync()
-                    .WithTimeout(TimeSpan.FromMilliseconds(1000), ct)
-                    .ConfigureAwait(false);
+                using CancellationTokenSource cts = new(1000);
 
-                if (!discoveryResult.IsSuccess)
+                int read = await _client.Client.ReceiveAsync(ipDiscoveryBuffer.Memory, SocketFlags.None, cts.Token).ConfigureAwait(false);
+
+                if (read != discoveryBufferSize)
                 {
-                    return new VoiceUdpError("Timed out while waiting to receive an IP discovery packet.");
+                    return new VoiceUdpError("Failed to receive an IP discovery packet.");
                 }
 
-                ushort packetType = BinaryPrimitives.ReadUInt16BigEndian(discoveryResult.Entity.Buffer);
+                ushort packetType = BinaryPrimitives.ReadUInt16BigEndian(ipDiscoveryBuffer.Memory.Span);
 
                 if (packetType != (ushort)IPDiscoveryPacketType.Response)
                 {
@@ -150,7 +152,7 @@ namespace Remora.Discord.Voice.Services
                 IsConnected = true;
                 _ssrc = voiceServerDetails.SSRC;
 
-                return IPDiscoveryResponse.Unpack(discoveryResult.Entity.Buffer);
+                return IPDiscoveryResponse.Unpack(ipDiscoveryBuffer.Memory.Span);
             }
             catch (Exception ex)
             {

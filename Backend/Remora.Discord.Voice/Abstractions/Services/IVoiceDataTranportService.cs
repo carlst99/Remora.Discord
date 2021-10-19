@@ -75,6 +75,8 @@ namespace Remora.Discord.Voice.Abstractions.Services
         /// <returns>A result indicating the outcome of the operation.</returns>
         Result Initialize(IReadOnlyList<byte> key);
 
+        // TODO: SendFrameAsync, which can simply be a wrapper to the synchronous method in the implementing class?
+
         /// <summary>
         /// Sends an audio data frame.
         /// </summary>

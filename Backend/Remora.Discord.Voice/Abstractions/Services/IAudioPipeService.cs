@@ -1,5 +1,5 @@
 ﻿//
-//  IPDiscoveryPacketType.cs
+//  IAudioPipeService.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -20,24 +20,26 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using JetBrains.Annotations;
+using Remora.Results;
 
-namespace Remora.Discord.Voice.Objects.UdpDataProtocol
+namespace Remora.Discord.Voice.Abstractions.Services
 {
     /// <summary>
-    /// Enumerates the possible OP codes for IP discovery packets.
+    /// Represents an audio pipeline for encoding/decoding audio packets to/from a <see cref="IVoiceDataTranportService"/>.
     /// </summary>
     [PublicAPI]
-    public enum IPDiscoveryPacketType : ushort
+    public interface IAudioPipeService
     {
         /// <summary>
-        /// Defines the OP code of an IP discovery request packet.
+        /// Encodes sends a stream of audio.
         /// </summary>
-        Request = 0x1,
-
-        /// <summary>
-        /// Defines the OP code of an IP discovery response packet.
-        /// </summary>
-        Response = 0x2,
+        /// <param name="audioStream">The audio stream.</param>
+        /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
+        /// <returns>A result representing the outcome of the operation.</returns>
+        Task<Result> SendAsync(Stream audioStream, CancellationToken ct = default);
     }
 }

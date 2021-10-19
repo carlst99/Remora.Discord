@@ -23,6 +23,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Text;
+using JetBrains.Annotations;
 
 namespace Remora.Discord.Voice.Objects.UdpDataProtocol
 {
@@ -34,6 +35,7 @@ namespace Remora.Discord.Voice.Objects.UdpDataProtocol
     /// <param name="SSRC">The SSRC.</param>
     /// <param name="Address">The discovered external address.</param>
     /// <param name="Port">The discovered external port.</param>
+    [PublicAPI]
     public record IPDiscoveryResponse
     (
         IPDiscoveryPacketType Type,

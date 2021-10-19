@@ -22,23 +22,32 @@
 
 using System;
 using System.Buffers.Binary;
-using Remora.Discord.Voice.Abstractions.Objects.UdpDataProtocol;
 
 namespace Remora.Discord.Voice.Objects.UdpDataProtocol.Outgoing
 {
-    /// <inheritdoc cref="IIPDiscoveryRequest"/>
+    /// <summary>
+    /// Represents an IP discovery request packet.
+    /// </summary>
+    /// <param name="SSRC">The SSRC.</param>
     public record IPDiscoveryRequest
     (
         uint SSRC
-    ) : IIPDiscoveryRequest
+    )
     {
-        /// <inheritdoc />
+        /// <summary>
+        /// Gets the type of the discovery packet.
+        /// </summary>
         public IPDiscoveryPacketType Type => IPDiscoveryPacketType.Request;
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Gets the length of the discovery packet, not including the 'type' and 'length' fields.
+        /// </summary>
         public ushort Length => 70;
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Packs the packet.
+        /// </summary>
+        /// <param name="packTo">The buffer to pack the packet into.</param>
         public void Pack(Span<byte> packTo)
         {
             BinaryPrimitives.WriteUInt16BigEndian(packTo, (ushort)IPDiscoveryPacketType.Request);

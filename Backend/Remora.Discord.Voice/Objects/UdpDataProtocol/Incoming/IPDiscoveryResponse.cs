@@ -23,11 +23,17 @@
 using System;
 using System.Buffers.Binary;
 using System.Text;
-using Remora.Discord.Voice.Abstractions.Objects.UdpDataProtocol;
 
 namespace Remora.Discord.Voice.Objects.UdpDataProtocol.Incoming
 {
-    /// <inheritdoc cref=" IIPDiscoveryResponse"/>
+    /// <summary>
+    /// Represents an IP discovery response packet.
+    /// </summary>
+    /// <param name="Type">The type of the discovery packet.</param>
+    /// <param name="Length">The length of the discovery packet, not including the 'type' and 'length' fields.</param>
+    /// <param name="SSRC">The SSRC.</param>
+    /// <param name="Address">The discovered external address.</param>
+    /// <param name="Port">The discovered external port.</param>
     public record IPDiscoveryResponse
     (
         IPDiscoveryPacketType Type,
@@ -35,7 +41,7 @@ namespace Remora.Discord.Voice.Objects.UdpDataProtocol.Incoming
         uint SSRC,
         string Address,
         ushort Port
-    ) : IIPDiscoveryResponse
+    )
     {
         /// <summary>
         /// Unpacks from raw data.

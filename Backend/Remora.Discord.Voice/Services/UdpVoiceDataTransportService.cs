@@ -33,11 +33,11 @@ using JetBrains.Annotations;
 using Microsoft.Extensions.Options;
 using Remora.Discord.Voice.Abstractions;
 using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
-using Remora.Discord.Voice.Abstractions.Objects.UdpDataProtocol;
 using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Errors;
 using Remora.Discord.Voice.Interop;
 using Remora.Discord.Voice.Interop.Opus;
+using Remora.Discord.Voice.Objects.UdpDataProtocol;
 using Remora.Discord.Voice.Objects.UdpDataProtocol.Incoming;
 using Remora.Discord.Voice.Objects.UdpDataProtocol.Outgoing;
 using Remora.Results;
@@ -115,7 +115,7 @@ namespace Remora.Discord.Voice.Services
         }
 
         /// <inheritdoc />
-        public async Task<Result<IIPDiscoveryResponse>> ConnectAsync(IVoiceReady voiceServerDetails, CancellationToken ct = default)
+        public async Task<Result<IPDiscoveryResponse>> ConnectAsync(IVoiceReady voiceServerDetails, CancellationToken ct = default)
         {
             try
             {
@@ -280,6 +280,7 @@ namespace Remora.Discord.Voice.Services
         /// </summary>
         /// <param name="buffer">The buffer to write the header to.</param>
         /// <param name="pcm16Length">The length of the PCM-16 frame.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteRtpHeader(Span<byte> buffer, int pcm16Length)
         {
             buffer[0] = 0x80;
@@ -303,6 +304,7 @@ namespace Remora.Discord.Voice.Services
         /// <param name="nonceBuffer">The output nonce buffer.</param>
         /// <param name="packetBuffer">The packet buffer.</param>
         /// <param name="rtpHeader">The RTP header, used as the nonce when in <see cref="SupportedEncryptionMode.XSalsa20_Poly1305"/> mode.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteNonce(Span<byte> nonceBuffer, Span<byte> packetBuffer, ReadOnlySpan<byte> rtpHeader)
         {
             switch (_encryptionMode)

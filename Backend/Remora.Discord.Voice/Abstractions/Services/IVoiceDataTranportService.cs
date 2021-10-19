@@ -26,7 +26,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using JetBrains.Annotations;
 using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
-using Remora.Discord.Voice.Abstractions.Objects.UdpDataProtocol;
+using Remora.Discord.Voice.Objects.UdpDataProtocol.Incoming;
 using Remora.Results;
 
 namespace Remora.Discord.Voice.Abstractions.Services
@@ -66,7 +66,7 @@ namespace Remora.Discord.Voice.Abstractions.Services
         /// <param name="voiceServerDetails">The details of the voice server to connect to.</param>
         /// <param name="ct">The cancellation token for this operation.</param>
         /// <returns>A connection result which may or may not have succeeded.</returns>
-        Task<Result<IIPDiscoveryResponse>> ConnectAsync(IVoiceReady voiceServerDetails, CancellationToken ct = default);
+        Task<Result<IPDiscoveryResponse>> ConnectAsync(IVoiceReady voiceServerDetails, CancellationToken ct = default);
 
         /// <summary>
         /// Initializes the transport service.

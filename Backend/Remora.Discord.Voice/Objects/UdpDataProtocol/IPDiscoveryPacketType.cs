@@ -1,5 +1,5 @@
 ﻿//
-//  IIPDiscoveryRequest.cs
+//  IPDiscoveryPacketType.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -20,26 +20,21 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
-namespace Remora.Discord.Voice.Abstractions.Objects.UdpDataProtocol
+namespace Remora.Discord.Voice.Objects.UdpDataProtocol
 {
     /// <summary>
-    /// Represents an IP discovery request packet.
+    /// Enumerates the possible OP codes for IP discovery packets.
     /// </summary>
-    public interface IIPDiscoveryRequest : IUdpOutgoingDataPacket
+    public enum IPDiscoveryPacketType : ushort
     {
         /// <summary>
-        /// Gets the type of the discovery packet.
+        /// Defines the OP code of an IP discovery request packet.
         /// </summary>
-        public IPDiscoveryPacketType Type { get; }
+        Request = 0x1,
 
         /// <summary>
-        /// Gets the length of the packet.
+        /// Defines the OP code of an IP discovery response packet.
         /// </summary>
-        public ushort Length { get; }
-
-        /// <summary>
-        /// Gets the SSRC.
-        /// </summary>
-        public uint SSRC { get; }
+        Response = 0x2,
     }
 }

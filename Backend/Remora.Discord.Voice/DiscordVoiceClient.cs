@@ -39,7 +39,6 @@ using Remora.Discord.Voice.Abstractions.Objects.Commands;
 using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Objects.Events.Heartbeats;
 using Remora.Discord.Voice.Abstractions.Objects.Events.Sessions;
-using Remora.Discord.Voice.Abstractions.Objects.UdpDataProtocol;
 using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Errors;
 using Remora.Discord.Voice.Interop.Opus;
@@ -47,6 +46,7 @@ using Remora.Discord.Voice.Objects;
 using Remora.Discord.Voice.Objects.Commands.ConnectingResuming;
 using Remora.Discord.Voice.Objects.Commands.Heartbeats;
 using Remora.Discord.Voice.Objects.Commands.Protocols;
+using Remora.Discord.Voice.Objects.UdpDataProtocol.Incoming;
 using Remora.Results;
 
 namespace Remora.Discord.Voice
@@ -528,7 +528,7 @@ namespace Remora.Discord.Voice
                 return Result.FromError(selectedEncryptionMode);
             }
 
-            Result<IIPDiscoveryResponse> voiceServerConnectResult = await _dataService.ConnectAsync
+            Result<IPDiscoveryResponse> voiceServerConnectResult = await _dataService.ConnectAsync
             (
                 _voiceServerConnectionDetails!,
                 ct

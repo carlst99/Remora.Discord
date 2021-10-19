@@ -47,6 +47,7 @@ using Remora.Discord.Voice.Objects.Commands.ConnectingResuming;
 using Remora.Discord.Voice.Objects.Commands.Heartbeats;
 using Remora.Discord.Voice.Objects.Commands.Protocols;
 using Remora.Discord.Voice.Objects.UdpDataProtocol;
+using Remora.Discord.Voice.Util;
 using Remora.Results;
 
 namespace Remora.Discord.Voice
@@ -145,7 +146,7 @@ namespace Remora.Discord.Voice
             _receiveTask = Task.FromResult(Result.FromSuccess());
 
             _transmitSemaphore = new SemaphoreSlim(1, 1);
-            _sampleSize = OpusEncoder.CalculateSampleSize(SampleDurationMS);
+            _sampleSize = Pcm16Util.CalculateSampleSize(SampleDurationMS);
             _transmitPcmBuffer = MemoryPool<byte>.Shared.Rent(_sampleSize);
             _transmitOpusBuffer = MemoryPool<byte>.Shared.Rent(_sampleSize);
 
@@ -334,7 +335,7 @@ namespace Remora.Discord.Voice
                     }
 
                     // Adapted from https://github.com/DSharpPlus/DSharpPlus/blob/master/DSharpPlus.VoiceNext/VoiceNextConnection.cs
-                    int durationModifier = OpusEncoder.CalculateSampleDuration(pcmRead) / 5;
+                    int durationModifier = Pcm16Util.CalculateSampleDuration(pcmRead) / 5;
                     double cts = Math.Max(Stopwatch.GetTimestamp() - synchronizerTicks, 0);
 
                     if (cts < synchronizerResolution * durationModifier)

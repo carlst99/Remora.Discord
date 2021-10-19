@@ -23,7 +23,7 @@
 using System;
 using System.Buffers.Binary;
 
-namespace Remora.Discord.Voice.Objects.UdpDataProtocol.Outgoing
+namespace Remora.Discord.Voice.Objects.UdpDataProtocol
 {
     /// <summary>
     /// Represents an IP discovery request packet.
@@ -50,8 +50,8 @@ namespace Remora.Discord.Voice.Objects.UdpDataProtocol.Outgoing
         /// <param name="packTo">The buffer to pack the packet into.</param>
         public void Pack(Span<byte> packTo)
         {
-            BinaryPrimitives.WriteUInt16BigEndian(packTo, (ushort)IPDiscoveryPacketType.Request);
-            BinaryPrimitives.WriteUInt16BigEndian(packTo[2..], 70);
+            BinaryPrimitives.WriteUInt16BigEndian(packTo, (ushort)Type);
+            BinaryPrimitives.WriteUInt16BigEndian(packTo[2..], Length);
             BinaryPrimitives.WriteUInt32BigEndian(packTo[4..], SSRC);
         }
     }

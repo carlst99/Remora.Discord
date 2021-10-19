@@ -24,7 +24,7 @@ using System;
 using System.Buffers.Binary;
 using System.Text;
 
-namespace Remora.Discord.Voice.Objects.UdpDataProtocol.Incoming
+namespace Remora.Discord.Voice.Objects.UdpDataProtocol
 {
     /// <summary>
     /// Represents an IP discovery response packet.

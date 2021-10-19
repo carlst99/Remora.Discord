@@ -26,7 +26,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using JetBrains.Annotations;
 using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
-using Remora.Discord.Voice.Objects.UdpDataProtocol.Incoming;
+using Remora.Discord.Voice.Objects.UdpDataProtocol;
 using Remora.Results;
 
 namespace Remora.Discord.Voice.Abstractions.Services

@@ -38,8 +38,6 @@ using Remora.Discord.Voice.Errors;
 using Remora.Discord.Voice.Interop;
 using Remora.Discord.Voice.Interop.Opus;
 using Remora.Discord.Voice.Objects.UdpDataProtocol;
-using Remora.Discord.Voice.Objects.UdpDataProtocol.Incoming;
-using Remora.Discord.Voice.Objects.UdpDataProtocol.Outgoing;
 using Remora.Results;
 
 namespace Remora.Discord.Voice.Services

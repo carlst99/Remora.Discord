@@ -46,7 +46,7 @@ using Remora.Discord.Voice.Objects;
 using Remora.Discord.Voice.Objects.Commands.ConnectingResuming;
 using Remora.Discord.Voice.Objects.Commands.Heartbeats;
 using Remora.Discord.Voice.Objects.Commands.Protocols;
-using Remora.Discord.Voice.Objects.UdpDataProtocol.Incoming;
+using Remora.Discord.Voice.Objects.UdpDataProtocol;
 using Remora.Results;
 
 namespace Remora.Discord.Voice

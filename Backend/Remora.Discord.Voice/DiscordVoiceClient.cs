@@ -661,7 +661,7 @@ namespace Remora.Discord.Voice
 
             if (voiceServer.Endpoint is null)
             {
-                return new VoiceServerUnavailableError();
+                return new VoiceGatewayUnavailableError();
             }
 
             Result<Uri> constructUriResult = ConstructVoiceGatewayEndpoint(voiceServer.Endpoint);

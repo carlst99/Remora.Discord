@@ -1,5 +1,5 @@
 ﻿//
-//  VoiceServerUnavailableError.cs
+//  VoiceGatewayUnavailableError.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -29,6 +29,6 @@ namespace Remora.Discord.Voice.Errors
     /// Represents a failure to connect, or maintain a connection to a voice server due to a loss in availability.
     /// </summary>
     [PublicAPI]
-    public record VoiceServerUnavailableError()
+    public record VoiceGatewayUnavailableError()
         : ResultError("Voice connection severed due to endpoint server de-allocation.");
 }

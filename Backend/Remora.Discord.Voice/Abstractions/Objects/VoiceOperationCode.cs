@@ -81,8 +81,18 @@ namespace Remora.Discord.Voice.Abstractions.Objects
         Resumed = 9,
 
         /// <summary>
+        /// A client has connected to the voice channel.
+        /// </summary>
+        ClientConnect = 12,
+
+        /// <summary>
         /// A client has disconnected from the voice channel.
         /// </summary>
-        ClientDisconnect = 13
+        ClientDisconnect = 13,
+
+        /// <summary>
+        /// Describes the codecs being used for media transmission in the voice channel.
+        /// </summary>
+        CodecDescription = 14
     }
 }

@@ -32,6 +32,7 @@ using Remora.Discord.Voice.Abstractions.Objects.Commands.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Objects.Commands.Heartbeats;
 using Remora.Discord.Voice.Abstractions.Objects.Commands.Protocols;
 using Remora.Discord.Voice.Abstractions.Objects.Events.Clients;
+using Remora.Discord.Voice.Abstractions.Objects.Events.Codecs;
 using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Objects.Events.Heartbeats;
 using Remora.Discord.Voice.Abstractions.Objects.Events.Sessions;
@@ -41,6 +42,7 @@ using Remora.Discord.Voice.Objects.Commands.ConnectingResuming;
 using Remora.Discord.Voice.Objects.Commands.Heartbeats;
 using Remora.Discord.Voice.Objects.Commands.Protocols;
 using Remora.Discord.Voice.Objects.Events.Clients;
+using Remora.Discord.Voice.Objects.Events.Codecs;
 using Remora.Discord.Voice.Objects.Events.ConnectingResuming;
 using Remora.Discord.Voice.Objects.Events.Heartbeats;
 using Remora.Discord.Voice.Objects.Events.Sessions;
@@ -136,6 +138,9 @@ namespace Remora.Discord.Voice.Extensions
             // Clients
             options.AddDataObjectConverter<IVoiceClientDisconnect, VoiceClientDisconnect>();
             options.AddDataObjectConverter<IVoiceSpeakingEvent, VoiceSpeakingEvent>();
+
+            // Codecs
+            options.AddDataObjectConverter<IVoiceCodecDescription, VoiceCodecDescription>();
 
             return options;
         }

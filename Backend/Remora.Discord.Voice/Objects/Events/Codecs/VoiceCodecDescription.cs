@@ -1,5 +1,5 @@
 ﻿//
-//  IVoiceClientDisconnect.cs
+//  VoiceCodecDescription.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -21,19 +21,15 @@
 //
 
 using JetBrains.Annotations;
-using Remora.Discord.Core;
+using Remora.Discord.Voice.Abstractions.Objects.Events.Codecs;
 
-namespace Remora.Discord.Voice.Abstractions.Objects.Events.Clients
+namespace Remora.Discord.Voice.Objects.Events.Codecs
 {
-    /// <summary>
-    /// Represents data that a client disconnected.
-    /// </summary>
+    /// <inheritdoc cref="IVoiceCodecDescription"/>
     [PublicAPI]
-    public interface IVoiceClientDisconnect : IVoiceGatewayEvent
-    {
-        /// <summary>
-        /// Gets the ID of the user who disconnected.
-        /// </summary>
-        Snowflake UserID { get; }
-    }
+    public record VoiceCodecDescription
+    (
+        string AudioCodec,
+        string VideoCodec
+    ) : IVoiceCodecDescription;
 }

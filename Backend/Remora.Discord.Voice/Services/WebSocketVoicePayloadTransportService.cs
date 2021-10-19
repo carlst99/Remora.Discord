@@ -230,10 +230,10 @@ namespace Remora.Discord.Voice.Services
                 ms.Seek(0, SeekOrigin.Begin);
 
                 // For debugging purposes only
-                /*IMemoryOwner<byte> tempBuffer = MemoryPool<byte>.Shared.Rent((int)ms.Length);
+                IMemoryOwner<byte> tempBuffer = MemoryPool<byte>.Shared.Rent((int)ms.Length);
                 await ms.ReadAsync(tempBuffer.Memory, ct).ConfigureAwait(false);
                 Console.WriteLine(Encoding.UTF8.GetString(tempBuffer.Memory.Span));
-                ms.Seek(0, SeekOrigin.Begin);*/
+                ms.Seek(0, SeekOrigin.Begin);
 
                 var payload = await JsonSerializer.DeserializeAsync<IVoicePayload>(ms, _jsonOptions, ct).ConfigureAwait(false);
                 if (payload is null)

@@ -30,7 +30,7 @@ using Remora.Results;
 namespace Remora.Discord.Voice.Abstractions.Services
 {
     /// <summary>
-    /// Represents an audio pipeline for encoding/decoding audio packets to/from a <see cref="IVoiceDataTranportService"/>.
+    /// Represents an audio interface for encoding/decoding audio packets to/from a <see cref="IVoiceDataTranportService"/>.
     /// </summary>
     [PublicAPI]
     public interface IAudioPipeService

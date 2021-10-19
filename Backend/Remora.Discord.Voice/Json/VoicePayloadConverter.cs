@@ -29,6 +29,7 @@ using Remora.Discord.Voice.Abstractions.Objects.Commands.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Objects.Commands.Heartbeats;
 using Remora.Discord.Voice.Abstractions.Objects.Commands.Protocols;
 using Remora.Discord.Voice.Abstractions.Objects.Events.Clients;
+using Remora.Discord.Voice.Abstractions.Objects.Events.Codecs;
 using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Objects.Events.Heartbeats;
 using Remora.Discord.Voice.Abstractions.Objects.Events.Sessions;
@@ -69,37 +70,31 @@ namespace Remora.Discord.Voice.Json
                 throw new JsonException();
             }
 
-            var operationCode = JsonSerializer.Deserialize<VoiceOperationCode>(operationCodeProperty.GetRawText(), options);
-
-            // Camera broadcast.
-            // TODO: Define packet for this.
-            if (operationCode == (VoiceOperationCode)12)
-            {
-                System.Diagnostics.Debug.WriteLine(document.RootElement.GetRawText());
-                throw new JsonException();
-            }
+            var operationCode = (VoiceOperationCode)operationCodeProperty.GetInt32();
 
             return operationCode switch
             {
                 // Bidirectional
                 VoiceOperationCode.Heartbeat => DeserializePayload<IVoiceHeartbeat>(realDocument, options),
-                VoiceOperationCode.HeartbeatAcknowledgement => DeserializePayload<IVoiceHeartbeatAcknowledge>(realDocument, options),
                 VoiceOperationCode.Speaking => DeserializePayload<IVoiceSpeakingEvent>(realDocument, options),
+                VoiceOperationCode.HeartbeatAcknowledgement => DeserializePayload<IVoiceHeartbeatAcknowledge>(realDocument, options),
 
                 // Commands
                 VoiceOperationCode.Identify => DeserializePayload<IVoiceIdentify>(realDocument, options),
-                VoiceOperationCode.Resume => DeserializePayload<IVoiceResume>(realDocument, options),
                 VoiceOperationCode.SelectProtocol => DeserializePayload<IVoiceSelectProtocol>(realDocument, options),
+                VoiceOperationCode.Resume => DeserializePayload<IVoiceResume>(realDocument, options),
 
                 // Events
-                VoiceOperationCode.ClientDisconnect => DeserializePayload<IVoiceClientDisconnect>(realDocument, options),
-                VoiceOperationCode.Hello => DeserializePayload<IVoiceHello>(realDocument, options),
                 VoiceOperationCode.Ready => DeserializePayload<IVoiceReady>(realDocument, options),
-                VoiceOperationCode.Resumed => new VoicePayload<VoiceResumed>(new VoiceResumed()),
                 VoiceOperationCode.SessionDescription => DeserializePayload<IVoiceSessionDescription>(realDocument, options),
+                VoiceOperationCode.Hello => DeserializePayload<IVoiceHello>(realDocument, options),
+                VoiceOperationCode.Resumed => new VoicePayload<VoiceResumed>(new VoiceResumed()),
+                // TODO: Add ClientConnect
+                VoiceOperationCode.ClientDisconnect => DeserializePayload<IVoiceClientDisconnect>(realDocument, options),
+                VoiceOperationCode.CodecDescription => DeserializePayload<IVoiceCodecDescription>(realDocument, options),
 
                 // Other
-                _ => throw new ArgumentOutOfRangeException(null, "Received operation code was not recognised."),
+                _ => throw new ArgumentOutOfRangeException(null, "Received operation code was not recognised: " + operationCode),
             };
         }
 
@@ -166,24 +161,27 @@ namespace Remora.Discord.Voice.Json
             return dataType switch
             {
                 // Commands
-                _ when typeof(IVoiceHeartbeat).IsAssignableFrom(dataType)
-                => VoiceOperationCode.Heartbeat,
-
                 _ when typeof(IVoiceIdentify).IsAssignableFrom(dataType)
                 => VoiceOperationCode.Identify,
-
-                _ when typeof(IVoiceResume).IsAssignableFrom(dataType)
-                => VoiceOperationCode.Resume,
 
                 _ when typeof(IVoiceSelectProtocol).IsAssignableFrom(dataType)
                 => VoiceOperationCode.SelectProtocol,
 
+                _ when typeof(IVoiceHeartbeat).IsAssignableFrom(dataType)
+                => VoiceOperationCode.Heartbeat,
+
                 _ when typeof(IVoiceSpeakingCommand).IsAssignableFrom(dataType)
                 => VoiceOperationCode.Speaking,
 
+                _ when typeof(IVoiceResume).IsAssignableFrom(dataType)
+                => VoiceOperationCode.Resume,
+
                 // Events
-                _ when typeof(IVoiceClientDisconnect).IsAssignableFrom(dataType)
-                => VoiceOperationCode.ClientDisconnect,
+                _ when typeof(IVoiceReady).IsAssignableFrom(dataType)
+                => VoiceOperationCode.Ready,
+
+                _ when typeof(IVoiceSessionDescription).IsAssignableFrom(dataType)
+                => VoiceOperationCode.SessionDescription,
 
                 _ when typeof(IVoiceHeartbeatAcknowledge).IsAssignableFrom(dataType)
                 => VoiceOperationCode.HeartbeatAcknowledgement,
@@ -191,14 +189,14 @@ namespace Remora.Discord.Voice.Json
                 _ when typeof(IVoiceReady).IsAssignableFrom(dataType)
                 => VoiceOperationCode.Hello,
 
-                _ when typeof(IVoiceReady).IsAssignableFrom(dataType)
-                => VoiceOperationCode.Ready,
-
                 _ when typeof(IVoiceResumed).IsAssignableFrom(dataType)
                 => VoiceOperationCode.Resumed,
 
-                _ when typeof(IVoiceSessionDescription).IsAssignableFrom(dataType)
-                => VoiceOperationCode.SessionDescription,
+                _ when typeof(IVoiceClientDisconnect).IsAssignableFrom(dataType)
+                => VoiceOperationCode.ClientDisconnect,
+
+                _ when typeof(IVoiceCodecDescription).IsAssignableFrom(dataType)
+                => VoiceOperationCode.CodecDescription,
 
                 // Other
                 _ => new NotSupportedError("Unknown operation code.")

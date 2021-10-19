@@ -74,6 +74,7 @@ namespace Remora.Discord.Voice
         private readonly int _sampleSize;
         private readonly IMemoryOwner<byte> _transmitPcmBuffer;
         private readonly IMemoryOwner<byte> _transmitOpusBuffer;
+        private readonly IMemoryOwner<byte> _silenceFrameBuffer;
 
         /// <summary>
         /// Holds payloads that have been submitted by the application, but have not yet been sent to the gateway.
@@ -147,6 +148,11 @@ namespace Remora.Discord.Voice
             _sampleSize = OpusEncoder.CalculateSampleSize(SampleDurationMS);
             _transmitPcmBuffer = MemoryPool<byte>.Shared.Rent(_sampleSize);
             _transmitOpusBuffer = MemoryPool<byte>.Shared.Rent(_sampleSize);
+
+            _silenceFrameBuffer = MemoryPool<byte>.Shared.Rent(3);
+            _silenceFrameBuffer.Memory.Span[0] = 0xF8;
+            _silenceFrameBuffer.Memory.Span[0] = 0xFF;
+            _silenceFrameBuffer.Memory.Span[0] = 0xFE;
 
             ConnectionStatus = GatewayConnectionStatus.Offline;
         }
@@ -318,8 +324,8 @@ namespace Remora.Discord.Voice
                         return Result.FromError(encodeResult);
                     }
 
-                    // From https://github.com/DSharpPlus/DSharpPlus/blob/master/DSharpPlus.VoiceNext/VoiceNextConnection.cs
-                    /*int durationModifier = OpusEncoder.CalculateSampleDuration(pcmRead);
+                    // Adapted from https://github.com/DSharpPlus/DSharpPlus/blob/master/DSharpPlus.VoiceNext/VoiceNextConnection.cs
+                    int durationModifier = OpusEncoder.CalculateSampleDuration(pcmRead) / 5;
                     double cts = Math.Max(Stopwatch.GetTimestamp() - synchronizerTicks, 0);
                     if (cts < synchronizerResolution * durationModifier)
                     {
@@ -329,11 +335,18 @@ namespace Remora.Discord.Voice
                             ct
                         ).ConfigureAwait(false);
                     }
-                    synchronizerTicks += synchronizerResolution * durationModifier;*/
-
-                    await Task.Delay((int)(SampleDurationMS * 0.75), ct).ConfigureAwait(false); // TODO: Improve, this is naive. Only works well with 40ms durations and higher
+                    synchronizerTicks += synchronizerResolution * durationModifier;
 
                     Result sendFrameResult = _dataService.SendFrame(_transmitOpusBuffer.Memory.Span[..encodeResult.Entity], pcmRead);
+                    if (!sendFrameResult.IsSuccess)
+                    {
+                        return sendFrameResult;
+                    }
+                }
+
+                for (int i = 0; i < 5 && !ct.IsCancellationRequested && ConnectionStatus is GatewayConnectionStatus.Connected; i++)
+                {
+                    Result sendFrameResult = _dataService.SendFrame(_silenceFrameBuffer.Memory.Span[..3], _sampleSize);
                     if (!sendFrameResult.IsSuccess)
                     {
                         return sendFrameResult;
@@ -376,6 +389,7 @@ namespace Remora.Discord.Voice
             _encoder?.Dispose();
             _transmitSemaphore.Dispose();
             _transmitPcmBuffer.Dispose();
+            _silenceFrameBuffer.Dispose();
         }
 
         /// <summary>

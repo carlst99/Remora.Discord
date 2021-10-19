@@ -45,6 +45,9 @@ namespace Remora.Discord.Voice.Services
     /// <summary>
     /// Represents a UDP-based transport service for voice data.
     /// </summary>
+    /// <remarks>
+    /// This class consumes/outputs Opus data packets, and performs the necessary encryption functions internally.
+    /// </remarks>
     [PublicAPI]
     public sealed class UdpVoiceDataTransportService : IVoiceDataTranportService, IDisposable
     {

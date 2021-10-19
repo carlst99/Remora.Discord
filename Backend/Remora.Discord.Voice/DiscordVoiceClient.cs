@@ -309,7 +309,7 @@ namespace Remora.Discord.Voice
                     )
                 );
 
-                while (!ct.IsCancellationRequested && ConnectionStatus is GatewayConnectionStatus.Connected)
+                while (!ct.IsCancellationRequested && !_disconnectRequestedSource.IsCancellationRequested)
                 {
                     int pcmRead = await pcm16AudioStream.ReadAsync
                     (
@@ -363,7 +363,7 @@ namespace Remora.Discord.Voice
                     }
                 }
 
-                for (int i = 0; i < 5 && !ct.IsCancellationRequested && ConnectionStatus is GatewayConnectionStatus.Connected; i++)
+                for (int i = 0; i < 5 && !ct.IsCancellationRequested && !_disconnectRequestedSource.IsCancellationRequested; i++)
                 {
                     Result sendFrameResult = _dataService.SendFrame(_silenceFrameBuffer.Memory.Span[..3], _sampleSize);
                     if (!sendFrameResult.IsSuccess)

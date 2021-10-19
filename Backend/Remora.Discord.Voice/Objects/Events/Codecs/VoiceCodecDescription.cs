@@ -30,6 +30,6 @@ namespace Remora.Discord.Voice.Objects.Events.Codecs
     public record VoiceCodecDescription
     (
         string AudioCodec,
-        string VideoCodec
+        string? VideoCodec
     ) : IVoiceCodecDescription;
 }

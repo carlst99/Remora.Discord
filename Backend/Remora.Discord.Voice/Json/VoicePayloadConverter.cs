@@ -34,7 +34,6 @@ using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Objects.Events.Heartbeats;
 using Remora.Discord.Voice.Abstractions.Objects.Events.Sessions;
 using Remora.Discord.Voice.Objects;
-using Remora.Discord.Voice.Objects.Events.ConnectingResuming;
 using Remora.Results;
 
 namespace Remora.Discord.Voice.Json
@@ -88,8 +87,8 @@ namespace Remora.Discord.Voice.Json
                 VoiceOperationCode.Ready => DeserializePayload<IVoiceReady>(realDocument, options),
                 VoiceOperationCode.SessionDescription => DeserializePayload<IVoiceSessionDescription>(realDocument, options),
                 VoiceOperationCode.Hello => DeserializePayload<IVoiceHello>(realDocument, options),
-                VoiceOperationCode.Resumed => new VoicePayload<VoiceResumed>(new VoiceResumed()),
-                // TODO: Add ClientConnect
+                VoiceOperationCode.Resumed => DeserializePayload<IVoiceResume>(realDocument, options),
+                VoiceOperationCode.ClientConnect => DeserializePayload<IVoiceClientConnect>(realDocument, options),
                 VoiceOperationCode.ClientDisconnect => DeserializePayload<IVoiceClientDisconnect>(realDocument, options),
                 VoiceOperationCode.CodecDescription => DeserializePayload<IVoiceCodecDescription>(realDocument, options),
 
@@ -191,6 +190,9 @@ namespace Remora.Discord.Voice.Json
 
                 _ when typeof(IVoiceResumed).IsAssignableFrom(dataType)
                 => VoiceOperationCode.Resumed,
+
+                _ when typeof(IVoiceClientConnect).IsAssignableFrom(dataType)
+                => VoiceOperationCode.ClientConnect,
 
                 _ when typeof(IVoiceClientDisconnect).IsAssignableFrom(dataType)
                 => VoiceOperationCode.ClientDisconnect,

@@ -136,8 +136,9 @@ namespace Remora.Discord.Voice.Extensions
             options.AddDataObjectConverter<IVoiceSessionDescription, VoiceSessionDescription>();
 
             // Clients
-            options.AddDataObjectConverter<IVoiceClientDisconnect, VoiceClientDisconnect>();
+            options.AddDataObjectConverter<IVoiceClientConnect, VoiceClientConnect>();
             options.AddDataObjectConverter<IVoiceSpeakingEvent, VoiceSpeakingEvent>();
+            options.AddDataObjectConverter<IVoiceClientDisconnect, VoiceClientDisconnect>();
 
             // Codecs
             options.AddDataObjectConverter<IVoiceCodecDescription, VoiceCodecDescription>();

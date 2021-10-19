@@ -21,18 +21,19 @@
 //
 
 using System;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using JetBrains.Annotations;
 using Remora.Discord.Voice.Errors;
+using Remora.Discord.Voice.Util;
 using Remora.Results;
+using VC = Remora.Discord.Voice.Util.VoiceConstants;
 
 #pragma warning disable SA1300 // Element should begin with upper-case letter
 
 namespace Remora.Discord.Voice.Interop.Opus
 {
     /// <summary>
-    /// Represents an interface to the native libsodium library.
+    /// Represents an interface to the native libopus library.
     /// </summary>
     public sealed unsafe partial class OpusEncoder
     {
@@ -77,7 +78,7 @@ namespace Remora.Discord.Voice.Interop.Opus
         /// <param name="value">The value of the parameter.</param>
         /// <returns>An <see cref="OpusErrorDefinition"/> result.</returns>
         [DllImport(OpusLibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "opus_encoder_ctl")]
-        private static extern OpusErrorDefinition _OpusEncoderGetCtl(IntPtr encoderState, OpusControlRequestDefinition request, out int value);
+        private static extern OpusErrorDefinition opus_encoder_ctl_get(IntPtr encoderState, OpusControlRequestDefinition request, out int value);
 
         /// <summary>
         /// Sets a control parameter on an encoder.
@@ -87,7 +88,7 @@ namespace Remora.Discord.Voice.Interop.Opus
         /// <param name="value">The value to set the parameter to.</param>
         /// <returns>An <see cref="OpusErrorDefinition"/> result.</returns>
         [DllImport(OpusLibraryName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "opus_encoder_ctl")]
-        private static extern OpusErrorDefinition _OpusEncoderSetCtl(IntPtr encoderState, OpusControlRequestDefinition request, int value);
+        private static extern OpusErrorDefinition opus_encoder_ctl_set(IntPtr encoderState, OpusControlRequestDefinition request, int value);
 
         /// <summary>
         /// Frees an encoder allocation by <see cref="opus_encoder_create(int, int, int, out OpusErrorDefinition)"/>.
@@ -100,14 +101,6 @@ namespace Remora.Discord.Voice.Interop.Opus
     [PublicAPI]
     public sealed partial class OpusEncoder : IDisposable
     {
-        private const int DiscordSampleRate = 48000;
-        private const int DiscordChannelCount = 2;
-
-        /// <summary>
-        /// Gets the maximum allowed bitrate in a Discord channel. Currently 128kbps.
-        /// </summary>
-        public const int DiscordMaxBitrate = 131072;
-
         private readonly IntPtr _state;
 
         /// <summary>
@@ -127,7 +120,7 @@ namespace Remora.Discord.Voice.Interop.Opus
         /// <returns>The created <see cref="OpusEncoder"/>, or an error if the initialization failed.</returns>
         public static Result<OpusEncoder> Create(OpusApplicationDefinition codingMode)
         {
-            IntPtr state = opus_encoder_create(DiscordSampleRate, DiscordChannelCount, (int)codingMode, out OpusErrorDefinition error);
+            IntPtr state = opus_encoder_create(VC.DiscordSampleRate, VC.DiscordChannelCount, (int)codingMode, out OpusErrorDefinition error);
 
             if (error is not OpusErrorDefinition.OK)
             {
@@ -136,9 +129,9 @@ namespace Remora.Discord.Voice.Interop.Opus
 
             error = codingMode switch
             {
-                OpusApplicationDefinition.Voip => _OpusEncoderSetCtl(state, OpusControlRequestDefinition.SetSignal, (int)OpusSignalDefinition.Voice),
-                OpusApplicationDefinition.Audio => _OpusEncoderSetCtl(state, OpusControlRequestDefinition.SetSignal, (int)OpusSignalDefinition.Music),
-                _ => _OpusEncoderSetCtl(state, OpusControlRequestDefinition.SetSignal, (int)OpusSpecialDefinition.Auto),
+                OpusApplicationDefinition.Voip => opus_encoder_ctl_set(state, OpusControlRequestDefinition.SetSignal, (int)OpusSignalDefinition.Voice),
+                OpusApplicationDefinition.Audio => opus_encoder_ctl_set(state, OpusControlRequestDefinition.SetSignal, (int)OpusSignalDefinition.Music),
+                _ => opus_encoder_ctl_set(state, OpusControlRequestDefinition.SetSignal, (int)OpusSpecialDefinition.Auto),
             };
 
             if (error is not OpusErrorDefinition.OK)
@@ -147,21 +140,21 @@ namespace Remora.Discord.Voice.Interop.Opus
                 return new OpusError(error, "Failed to set encoder signal type");
             }
 
-            error = _OpusEncoderSetCtl(state, OpusControlRequestDefinition.SetPacketLossPercentage, 15);
+            error = opus_encoder_ctl_set(state, OpusControlRequestDefinition.SetPacketLossPercentage, 15);
             if (error is not OpusErrorDefinition.OK)
             {
                 opus_encoder_destroy(state);
                 return new OpusError(error, "Failed to set expected packet loss on encoder.");
             }
 
-            error = _OpusEncoderSetCtl(state, OpusControlRequestDefinition.SetInbandFec, 1); // Enable
+            error = opus_encoder_ctl_set(state, OpusControlRequestDefinition.SetInbandFec, 1); // Enable
             if (error is not OpusErrorDefinition.OK)
             {
                 opus_encoder_destroy(state);
                 return new OpusError(error, "Failed to enable in-band forward error control on encoder.");
             }
 
-            error = _OpusEncoderSetCtl(state, OpusControlRequestDefinition.SetBitrate, DiscordMaxBitrate); // 128 kbps, maximum bitrate in a Discord channel.
+            error = opus_encoder_ctl_set(state, OpusControlRequestDefinition.SetBitrate, VC.DiscordMaxBitrate);
             if (error is not OpusErrorDefinition.OK)
             {
                 opus_encoder_destroy(state);
@@ -170,33 +163,6 @@ namespace Remora.Discord.Voice.Interop.Opus
 
             return new OpusEncoder(state);
         }
-
-        /// <summary>
-        /// Calculates the frame size of a PCM sample in bytes.
-        /// </summary>
-        /// <param name="sampleSize">The byte-size of the sample.</param>
-        /// <returns>The frame size of the sample in bytes.</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int CalculateFrameSize(int sampleSize)
-            => sampleSize / DiscordChannelCount / sizeof(short); // Divide by the byte size of individual PCM-16 segments
-
-        /// <summary>
-        /// Calculates the duration in milliseconds of a PCM sample.
-        /// </summary>
-        /// <param name="sampleSize">The byte-size of the sample.</param>
-        /// <returns>The duration in milliseconds.</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int CalculateSampleDuration(int sampleSize)
-            => sampleSize / (DiscordSampleRate / 1000) / DiscordChannelCount / 2; // Divide by the byte size of individual PCM-16 segments
-
-        /// <summary>
-        /// Calculates the size of a PCM sample in bytes.
-        /// </summary>
-        /// <param name="sampleDurationMS">The duration of the sample in milliseconds.</param>
-        /// <returns>The size of the sample in bytes.</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int CalculateSampleSize(int sampleDurationMS)
-         => sampleDurationMS * DiscordChannelCount * (DiscordSampleRate / 1000) * sizeof(short); // Multiply by the byte size of individual PCM-16 segments
 
         /// <summary>
         /// Encodes an audio sample.
@@ -211,7 +177,7 @@ namespace Remora.Discord.Voice.Interop.Opus
                 return new ArgumentOutOfRangeError(nameof(output), "PCM and output buffers must be of equal length.");
             }
 
-            int frameSize = CalculateFrameSize(pcm16.Length);
+            int frameSize = Pcm16Util.CalculateFrameSize(pcm16.Length);
 
             int writtenLength;
             fixed (byte* pcm16Ptr = pcm16)
@@ -230,16 +196,16 @@ namespace Remora.Discord.Voice.Interop.Opus
         /// <summary>
         /// Sets the bitrate to encode at.
         /// </summary>
-        /// <param name="bitrate">The new bitrate. Must be between 0 and <see cref="DiscordMaxBitrate"/>.</param>
+        /// <param name="bitrate">The new bitrate. Must be between 0 and <see cref="VC.DiscordMaxBitrate"/>.</param>
         /// <returns>A result representing the outcome of the operation.</returns>
         public Result SetBitrate(int bitrate)
         {
-            if (bitrate < 0 || bitrate > DiscordMaxBitrate)
+            if (bitrate < 0 || bitrate > VC.DiscordMaxBitrate)
             {
-                return new ArgumentOutOfRangeError(nameof(bitrate), $"Bitrate must be greater than zero and less than {DiscordMaxBitrate}.");
+                return new ArgumentOutOfRangeError(nameof(bitrate), $"Bitrate must be greater than zero and less than {VC.DiscordMaxBitrate}.");
             }
 
-            OpusErrorDefinition error = _OpusEncoderSetCtl(_state, OpusControlRequestDefinition.SetBitrate, bitrate);
+            OpusErrorDefinition error = opus_encoder_ctl_set(_state, OpusControlRequestDefinition.SetBitrate, bitrate);
             return error is not OpusErrorDefinition.OK
                 ? new OpusError(error, "Failed to set bitrate on encoder.")
                 : Result.FromSuccess();
@@ -251,7 +217,7 @@ namespace Remora.Discord.Voice.Interop.Opus
         /// <returns>A result representing the outcome of the operation.</returns>
         public Result Reset()
         {
-            OpusErrorDefinition error = _OpusEncoderSetCtl(_state, OpusControlRequestDefinition.ResetState, 0);
+            OpusErrorDefinition error = opus_encoder_ctl_set(_state, OpusControlRequestDefinition.ResetState, 0);
             return error is not OpusErrorDefinition.OK
                 ? new OpusError(error, "Failed to reset the encoder.")
                 : Result.FromSuccess();

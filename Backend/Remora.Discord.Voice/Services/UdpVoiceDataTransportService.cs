@@ -38,6 +38,7 @@ using Remora.Discord.Voice.Errors;
 using Remora.Discord.Voice.Interop;
 using Remora.Discord.Voice.Interop.Opus;
 using Remora.Discord.Voice.Objects.UdpDataProtocol;
+using Remora.Discord.Voice.Util;
 using Remora.Results;
 
 namespace Remora.Discord.Voice.Services
@@ -97,7 +98,7 @@ namespace Remora.Discord.Voice.Services
 
             // Randomise as per the RTP specification recommendation.
             _sequence = (ushort)random.Next(0, ushort.MaxValue);
-            _timestamp = (uint)random.Next(0, 4096);
+            _timestamp = (uint)random.Next(0, short.MaxValue);
         }
 
         /// <inheritdoc />
@@ -307,7 +308,7 @@ namespace Remora.Discord.Voice.Services
             BinaryPrimitives.WriteUInt32BigEndian(buffer[4..], _timestamp);
             BinaryPrimitives.WriteUInt32BigEndian(buffer[8..], _ssrc);
 
-            _timestamp += (uint)OpusEncoder.CalculateFrameSize(pcm16Length);
+            _timestamp += (uint)Pcm16Util.CalculateFrameSize(pcm16Length);
         }
 
         /// <summary>

@@ -150,7 +150,7 @@ namespace Remora.Discord.Samples.Caching.Commands
         /// </summary>
         /// <returns>A result representing the outcome of the operation.</returns>
         [Command("sodium-info")]
-        public async Task<IResult> SodiumVersionCommandAsync()
+        public async Task<IResult> SodiumInfoCommandAsync()
         {
             return await _feedbackService.SendContextualInfoAsync
             (

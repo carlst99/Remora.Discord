@@ -136,7 +136,6 @@ namespace Remora.Discord.Voice.Services
                 using CancellationTokenSource cts = new(1000);
 
                 int read = await _client.Client.ReceiveAsync(ipDiscoveryBuffer.Memory, SocketFlags.None, cts.Token).ConfigureAwait(false);
-
                 if (read != discoveryBufferSize)
                 {
                     return new VoiceUdpError("Failed to receive an IP discovery packet.");
@@ -241,7 +240,11 @@ namespace Remora.Discord.Voice.Services
                     return encryptionResult;
                 }
 
-                _client.Client.Send(packet);
+                _client.Client.Send(packet, SocketFlags.None, out SocketError errorCode);
+                if (errorCode is not SocketError.Success)
+                {
+                    return new VoiceTransmitError(errorCode, "Failed to send voice data packet.");
+                }
 
                 return Result.FromSuccess();
             }
@@ -249,6 +252,12 @@ namespace Remora.Discord.Voice.Services
             {
                 return ex;
             }
+        }
+
+        /// <inheritdoc />
+        public async Task<Result> SendFrameAsync(ReadOnlyMemory<byte> frame, int pcm16Length, CancellationToken ct = default)
+        {
+            return await Task.Run(() => SendFrame(frame.Span, pcm16Length), ct).ConfigureAwait(false);
         }
 
         /// <inheritdoc />

@@ -24,6 +24,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using JetBrains.Annotations;
+using Remora.Discord.Voice.Interop.Opus;
 using Remora.Results;
 
 namespace Remora.Discord.Voice.Abstractions.Services
@@ -34,6 +35,14 @@ namespace Remora.Discord.Voice.Abstractions.Services
     [PublicAPI]
     public interface IAudioPipeService
     {
+        /// <summary>
+        /// Initializes the service.
+        /// </summary>
+        /// <param name="audioType">The type of audio being transmitted, in order to optimize transmission.</param>
+        /// <param name="voiceDataTransportService">The voice data transport service, used to send and receive audio.</param>
+        /// <returns>A result representing the outcome of the operation.</returns>
+        Result Initialize(OpusApplicationDefinition audioType, IVoiceDataTranportService voiceDataTransportService);
+
         /// <summary>
         /// Encodes sends a stream of audio.
         /// </summary>

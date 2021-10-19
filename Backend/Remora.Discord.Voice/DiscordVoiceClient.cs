@@ -171,7 +171,7 @@ namespace Remora.Discord.Voice
         /// <param name="channelID">The ID of the channel to connect to.</param>
         /// <param name="isSelfMuted">A value indicating whether the bot should mute itself.</param>
         /// <param name="isSelfDeafened">A value indicating whether the bot should deafen itself.</param>
-        /// <param name="audioOptimizationMethod">The type of audio being transmitted, in order to optimize transmission.</param>
+        /// <param name="audioType">The type of audio being transmitted, in order to optimize transmission.</param>
         /// <param name="ct">A token by which the caller can request this method to stop.</param>
         /// <returns>A gateway connection result which may or may not have succeeded.</returns>
         public async Task<Result> RunAsync
@@ -180,7 +180,7 @@ namespace Remora.Discord.Voice
             Snowflake channelID,
             bool isSelfMuted,
             bool isSelfDeafened,
-            OpusApplicationDefinition audioOptimizationMethod = OpusApplicationDefinition.Audio,
+            OpusApplicationDefinition audioType = OpusApplicationDefinition.Audio,
             CancellationToken ct = default
         )
         {
@@ -191,7 +191,7 @@ namespace Remora.Discord.Voice
                     return new InvalidOperationError("Already running.");
                 }
 
-                Result<OpusEncoder> createEncoder = OpusEncoder.Create(audioOptimizationMethod);
+                Result<OpusEncoder> createEncoder = OpusEncoder.Create(audioType);
                 if (!createEncoder.IsSuccess)
                 {
                     return Result.FromError(createEncoder);
@@ -311,14 +311,23 @@ namespace Remora.Discord.Voice
 
                 while (!ct.IsCancellationRequested && ConnectionStatus is GatewayConnectionStatus.Connected)
                 {
-                    int pcmRead = await pcm16AudioStream.ReadAsync(_transmitPcmBuffer.Memory[0.._sampleSize], ct).ConfigureAwait(false);
+                    int pcmRead = await pcm16AudioStream.ReadAsync
+                    (
+                        _transmitPcmBuffer.Memory[0.._sampleSize],
+                        ct
+                    ).ConfigureAwait(false);
 
                     if (pcmRead < _sampleSize)
                     {
                         break; // TODO: Does this cut off audio in some cases?
                     }
 
-                    Result<int> encodeResult = _encoder!.Encode(_transmitPcmBuffer.Memory.Span[..pcmRead], _transmitOpusBuffer.Memory.Span[..pcmRead]);
+                    Result<int> encodeResult = _encoder!.Encode
+                    (
+                        _transmitPcmBuffer.Memory.Span[..pcmRead],
+                        _transmitOpusBuffer.Memory.Span[..pcmRead]
+                    );
+
                     if (!encodeResult.IsSuccess)
                     {
                         return Result.FromError(encodeResult);
@@ -327,17 +336,27 @@ namespace Remora.Discord.Voice
                     // Adapted from https://github.com/DSharpPlus/DSharpPlus/blob/master/DSharpPlus.VoiceNext/VoiceNextConnection.cs
                     int durationModifier = OpusEncoder.CalculateSampleDuration(pcmRead) / 5;
                     double cts = Math.Max(Stopwatch.GetTimestamp() - synchronizerTicks, 0);
+
                     if (cts < synchronizerResolution * durationModifier)
                     {
+                        long waitTicks = (long)(((synchronizerResolution * durationModifier) - cts) * tickResolution);
+
                         await Task.Delay
                         (
-                            TimeSpan.FromTicks((long)(((synchronizerResolution * durationModifier) - cts) * tickResolution)),
+                            TimeSpan.FromTicks(waitTicks),
                             ct
                         ).ConfigureAwait(false);
                     }
+
                     synchronizerTicks += synchronizerResolution * durationModifier;
 
-                    Result sendFrameResult = _dataService.SendFrame(_transmitOpusBuffer.Memory.Span[..encodeResult.Entity], pcmRead);
+                    Result sendFrameResult = await _dataService.SendFrameAsync
+                    (
+                        _transmitOpusBuffer.Memory[0..encodeResult.Entity],
+                        pcmRead,
+                        ct
+                    ).ConfigureAwait(false);
+
                     if (!sendFrameResult.IsSuccess)
                     {
                         return sendFrameResult;

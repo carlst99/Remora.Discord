@@ -89,6 +89,18 @@ namespace Remora.Discord.Voice.Abstractions.Services
         Result SendFrame(ReadOnlySpan<byte> frame, int pcm16Length);
 
         /// <summary>
+        /// Sends an audio data frame.
+        /// </summary>
+        /// <remarks>
+        /// This method should be thread-safe in conjunction with <see cref="ReceiveFrameAsync"/>.
+        /// </remarks>
+        /// <param name="frame">The data frame.</param>
+        /// <param name="pcm16Length">The byte length of the PCM-16 data that the frame was constructed from.</param>
+        /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
+        /// <returns>A result representing the outcome of the operation.</returns>
+        Task<Result> SendFrameAsync(ReadOnlyMemory<byte> frame, int pcm16Length, CancellationToken ct = default);
+
+        /// <summary>
         /// Asynchronously receives an opus data frame.
         /// </summary>
         /// <remarks>

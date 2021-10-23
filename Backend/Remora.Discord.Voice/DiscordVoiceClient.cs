@@ -409,6 +409,7 @@ namespace Remora.Discord.Voice
             _encoder?.Dispose();
             _transmitSemaphore.Dispose();
             _transmitPcmBuffer.Dispose();
+            _transmitOpusBuffer.Dispose();
             _silenceFrameBuffer.Dispose();
         }
 

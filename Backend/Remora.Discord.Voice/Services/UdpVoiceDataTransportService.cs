@@ -196,28 +196,27 @@ namespace Remora.Discord.Voice.Services
         }
 
         /// <inheritdoc />
-        public async ValueTask<Result<ReadOnlyMemory<byte>>> ReceiveFrameAsync(CancellationToken ct = default)
+        /// <exception cref="NotImplementedException">This method is not yet implemented.</exception>
+        public ValueTask<Result<ReadOnlyMemory<byte>>> ReceiveFrameAsync(CancellationToken ct = default)
         {
-            Result stateCheck = ReadyForTransmitReceive();
-            if (!stateCheck.IsSuccess)
-            {
-                return Result<ReadOnlyMemory<byte>>.FromError(stateCheck);
-            }
-
             throw new NotImplementedException();
         }
 
         /// <inheritdoc />
         public Result SendFrame(ReadOnlySpan<byte> frame, int pcm16Length)
         {
+            if (!IsConnected)
+            {
+                return new InvalidOperationError("The transport service must be connected before frames can be sent.");
+            }
+
+            if (_encryptor is null)
+            {
+                return new InvalidOperationError("The transport function must be initialized before frames can be sent.");
+            }
+
             try
             {
-                Result stateCheck = ReadyForTransmitReceive();
-                if (!stateCheck.IsSuccess)
-                {
-                    return stateCheck;
-                }
-
                 const int rtpHeaderSize = 12;
                 int encryptedFrameSize = frame.Length + (int)Sodium.MacSize;
 
@@ -266,25 +265,6 @@ namespace Remora.Discord.Voice.Services
         {
             // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
             Dispose(disposing: true);
-        }
-
-        /// <summary>
-        /// Checks the state of this instance to ensure it is ready to send and receive frames.
-        /// </summary>
-        /// <returns>A result representing the outcome of the operation.</returns>
-        private Result ReadyForTransmitReceive()
-        {
-            if (!IsConnected)
-            {
-                return new InvalidOperationError("The transport service must be connected before frames can be sent.");
-            }
-
-            if (_encryptor is null)
-            {
-                return new InvalidOperationError("The transport function must be initialized before frames can be sent.");
-            }
-
-            return Result.FromSuccess();
         }
 
         /// <summary>

@@ -41,7 +41,6 @@ using Remora.Discord.Voice.Abstractions.Objects.Events.Heartbeats;
 using Remora.Discord.Voice.Abstractions.Objects.Events.Sessions;
 using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Errors;
-using Remora.Discord.Voice.Interop.Opus;
 using Remora.Discord.Voice.Objects;
 using Remora.Discord.Voice.Objects.Commands.ConnectingResuming;
 using Remora.Discord.Voice.Objects.Commands.Heartbeats;
@@ -58,11 +57,6 @@ namespace Remora.Discord.Voice
     [PublicAPI]
     public sealed class DiscordVoiceClient : IAsyncDisposable
     {
-        /// <summary>
-        /// Gets the default sample duration in milliseconds.
-        /// </summary>
-        private const int SampleDurationMS = 40;
-
         private readonly ILogger<DiscordVoiceClient> _logger;
         private readonly DiscordGatewayClient _gatewayClient;
         private readonly DiscordVoiceClientOptions _clientOptions;
@@ -72,9 +66,6 @@ namespace Remora.Discord.Voice
         private readonly Random _random;
         private readonly HeartbeatData _heartbeatData;
         private readonly SemaphoreSlim _transmitSemaphore;
-        private readonly int _sampleSize;
-        private readonly IMemoryOwner<byte> _transmitPcmBuffer;
-        private readonly IMemoryOwner<byte> _transmitOpusBuffer;
         private readonly IMemoryOwner<byte> _silenceFrameBuffer;
 
         /// <summary>
@@ -99,8 +90,6 @@ namespace Remora.Discord.Voice
         private UpdateVoiceState? _connectionRequestParameters;
         private VoiceConnectionEstablishmentDetails? _gatewayConnectionDetails;
         private IVoiceReady? _voiceServerConnectionDetails;
-
-        private OpusEncoder? _encoder;
 
         /// <summary>
         /// Gets the connection status of the voice gateway.
@@ -146,9 +135,6 @@ namespace Remora.Discord.Voice
             _receiveTask = Task.FromResult(Result.FromSuccess());
 
             _transmitSemaphore = new SemaphoreSlim(1, 1);
-            _sampleSize = Pcm16Util.CalculateSampleSize(SampleDurationMS);
-            _transmitPcmBuffer = MemoryPool<byte>.Shared.Rent(_sampleSize);
-            _transmitOpusBuffer = MemoryPool<byte>.Shared.Rent(_sampleSize);
 
             _silenceFrameBuffer = MemoryPool<byte>.Shared.Rent(3);
             _silenceFrameBuffer.Memory.Span[0] = 0xF8;
@@ -172,7 +158,6 @@ namespace Remora.Discord.Voice
         /// <param name="channelID">The ID of the channel to connect to.</param>
         /// <param name="isSelfMuted">A value indicating whether the bot should mute itself.</param>
         /// <param name="isSelfDeafened">A value indicating whether the bot should deafen itself.</param>
-        /// <param name="audioType">The type of audio being transmitted, in order to optimize transmission.</param>
         /// <param name="ct">A token by which the caller can request this method to stop.</param>
         /// <returns>A gateway connection result which may or may not have succeeded.</returns>
         public async Task<Result> RunAsync
@@ -181,7 +166,6 @@ namespace Remora.Discord.Voice
             Snowflake channelID,
             bool isSelfMuted,
             bool isSelfDeafened,
-            OpusApplicationDefinition audioType = OpusApplicationDefinition.Audio,
             CancellationToken ct = default
         )
         {
@@ -191,13 +175,6 @@ namespace Remora.Discord.Voice
                 {
                     return new InvalidOperationError("Already running.");
                 }
-
-                Result<OpusEncoder> createEncoder = OpusEncoder.Create(audioType);
-                if (!createEncoder.IsSuccess)
-                {
-                    return Result.FromError(createEncoder);
-                }
-                _encoder = createEncoder.Entity;
 
                 _connectionRequestParameters = new UpdateVoiceState
                 (
@@ -272,28 +249,42 @@ namespace Remora.Discord.Voice
         /// <summary>
         /// Transmits audio.
         /// </summary>
-        /// <param name="pcm16AudioStream">A stream of PCM-16 audio data.</param>
-        /// <param name="ct">A <see cref="CancellationToken"/> used to stop the operation.</param>
+        /// <param name="audioStream">The audio data to send.</param>
+        /// <param name="transcoder">The audio transcoder to use.</param>
+        /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
         /// <returns>A result representing the outcome of the operation.</returns>
-        public async Task<Result> TransmitAudioAsync(Stream pcm16AudioStream, CancellationToken ct = default)
+        public async Task<Result> TransmitAudioAsync
+        (
+            Stream audioStream,
+            IAudioTranscoderService transcoder,
+            CancellationToken ct = default)
         {
+            if (ConnectionStatus is not GatewayConnectionStatus.Connected || !_dataService.IsConnected)
+            {
+                return new InvalidOperationError("Gateway is not connected.");
+            }
+
+            if (!transcoder.IsInitialized)
+            {
+                return new InvalidOperationError("The provided transcoder must first be initialized.");
+            }
+
+            // Take a local copy of the SSRC so we can still send a voice state update when the client is stopped
+            uint ssrc = _voiceServerConnectionDetails!.SSRC;
             bool needsRelease = false;
-            uint ssrc = 0;
+
+            int sampleSize = transcoder.SampleSize;
+            IMemoryOwner<byte> inputBuffer = MemoryPool<byte>.Shared.Rent(sampleSize);
+            IMemoryOwner<byte> opusBuffer = MemoryPool<byte>.Shared.Rent(sampleSize);
 
             try
             {
-                if (ConnectionStatus is not GatewayConnectionStatus.Connected || !_dataService.IsConnected)
-                {
-                    return new InvalidOperationError("Gateway is not connected.");
-                }
-
                 if (!await _transmitSemaphore.WaitAsync(10, ct).ConfigureAwait(false))
                 {
                     return new InvalidOperationError("This client is already transmitting audio.");
                 }
 
                 needsRelease = true;
-                ssrc = _voiceServerConnectionDetails!.SSRC;
 
                 // From https://github.com/DSharpPlus/DSharpPlus/blob/master/DSharpPlus.VoiceNext/VoiceNextConnection.cs
                 double synchronizerTicks = Stopwatch.GetTimestamp();
@@ -312,22 +303,23 @@ namespace Remora.Discord.Voice
 
                 while (!ct.IsCancellationRequested && !_disconnectRequestedSource.IsCancellationRequested)
                 {
-                    int pcmRead = await pcm16AudioStream.ReadAsync
+                    int read = await audioStream.ReadAsync
                     (
-                        _transmitPcmBuffer.Memory[0.._sampleSize],
+                        inputBuffer.Memory[0..sampleSize],
                         ct
                     ).ConfigureAwait(false);
 
-                    if (pcmRead < _sampleSize)
+                    if (read != sampleSize)
                     {
                         break; // TODO: Does this cut off audio in some cases?
                     }
 
-                    Result<int> encodeResult = _encoder!.Encode
+                    Result<int> encodeResult = await transcoder.EncodeAsync
                     (
-                        _transmitPcmBuffer.Memory.Span[..pcmRead],
-                        _transmitOpusBuffer.Memory.Span[..pcmRead]
-                    );
+                        inputBuffer.Memory[..read],
+                        opusBuffer.Memory[..read],
+                        ct
+                    ).ConfigureAwait(false);
 
                     if (!encodeResult.IsSuccess)
                     {
@@ -335,7 +327,7 @@ namespace Remora.Discord.Voice
                     }
 
                     // Adapted from https://github.com/DSharpPlus/DSharpPlus/blob/master/DSharpPlus.VoiceNext/VoiceNextConnection.cs
-                    int durationModifier = Pcm16Util.CalculateSampleDuration(pcmRead) / 5;
+                    int durationModifier = Pcm16Util.CalculateSampleDuration(read) / 5;
                     double cts = Math.Max(Stopwatch.GetTimestamp() - synchronizerTicks, 0);
 
                     if (cts < synchronizerResolution * durationModifier)
@@ -353,8 +345,8 @@ namespace Remora.Discord.Voice
 
                     Result sendFrameResult = await _dataService.SendFrameAsync
                     (
-                        _transmitOpusBuffer.Memory[0..encodeResult.Entity],
-                        pcmRead,
+                        opusBuffer.Memory[0..encodeResult.Entity],
+                        read,
                         ct
                     ).ConfigureAwait(false);
 
@@ -366,7 +358,7 @@ namespace Remora.Discord.Voice
 
                 for (int i = 0; i < 5 && !ct.IsCancellationRequested && !_disconnectRequestedSource.IsCancellationRequested; i++)
                 {
-                    Result sendFrameResult = _dataService.SendFrame(_silenceFrameBuffer.Memory.Span[..3], _sampleSize);
+                    Result sendFrameResult = _dataService.SendFrame(_silenceFrameBuffer.Memory.Span[..3], sampleSize);
                     if (!sendFrameResult.IsSuccess)
                     {
                         return sendFrameResult;
@@ -381,6 +373,9 @@ namespace Remora.Discord.Voice
             }
             finally
             {
+                inputBuffer.Dispose();
+                opusBuffer.Dispose();
+
                 EnqueueCommand
                 (
                     new VoiceSpeakingCommand
@@ -406,10 +401,7 @@ namespace Remora.Discord.Voice
                 await StopAsync().ConfigureAwait(false);
             }
 
-            _encoder?.Dispose();
             _transmitSemaphore.Dispose();
-            _transmitPcmBuffer.Dispose();
-            _transmitOpusBuffer.Dispose();
             _silenceFrameBuffer.Dispose();
         }
 
@@ -438,7 +430,6 @@ namespace Remora.Discord.Voice
             _connectionRequestParameters = null;
             _gatewayConnectionDetails = null;
             _voiceServerConnectionDetails = null;
-            _encoder?.Reset();
 
             ConnectionStatus = GatewayConnectionStatus.Offline;
         }

@@ -101,7 +101,7 @@ namespace Remora.Discord.Voice.Services
 
             if (IsDisposed)
             {
-                return new ObjectDisposedException(nameof(Pcm16AudioPipeService));
+                return new ObjectDisposedException(nameof(Pcm16AudioTranscoderService));
             }
 
             bool releaseEncode = false;
@@ -134,7 +134,7 @@ namespace Remora.Discord.Voice.Services
         {
             if (IsDisposed)
             {
-                return new ObjectDisposedException(nameof(Pcm16AudioPipeService));
+                return new ObjectDisposedException(nameof(Pcm16AudioTranscoderService));
             }
 
             bool releaseEncode = false;

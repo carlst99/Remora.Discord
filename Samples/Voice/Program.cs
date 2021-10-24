@@ -32,6 +32,7 @@ using Remora.Discord.Commands.Extensions;
 using Remora.Discord.Gateway;
 using Remora.Discord.Hosting.Extensions;
 using Remora.Discord.Samples.Caching.Commands;
+using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Extensions;
 
 namespace Remora.Discord.Samples.Voice

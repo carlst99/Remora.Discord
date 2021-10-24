@@ -20,8 +20,10 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+using System;
 using System.IO;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 using Remora.Commands.Attributes;
 using Remora.Commands.Groups;
 using Remora.Discord.API.Abstractions.Objects;
@@ -30,6 +32,7 @@ using Remora.Discord.Commands.Conditions;
 using Remora.Discord.Commands.Contexts;
 using Remora.Discord.Commands.Feedback.Services;
 using Remora.Discord.Voice;
+using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Interop;
 using Remora.Discord.Voice.Interop.Opus;
 using Remora.Results;
@@ -45,6 +48,7 @@ namespace Remora.Discord.Samples.Caching.Commands
         private readonly ICommandContext _context;
         private readonly DiscordVoiceClientFactory _voiceClientFactory;
         private readonly FeedbackService _feedbackService;
+        private readonly IServiceProvider _services;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="VoiceCommands"/> class.
@@ -52,16 +56,19 @@ namespace Remora.Discord.Samples.Caching.Commands
         /// <param name="context">The command context.</param>
         /// <param name="voiceClientFactory">The voice client factory.</param>
         /// <param name="feedbackService">The feedback service.</param>
+        /// <param name="services">The service provider.</param>
         public VoiceCommands
         (
             ICommandContext context,
             DiscordVoiceClientFactory voiceClientFactory,
-            FeedbackService feedbackService
+            FeedbackService feedbackService,
+            IServiceProvider services
         )
         {
             _context = context;
             _voiceClientFactory = voiceClientFactory;
             _feedbackService = feedbackService;
+            _services = services;
         }
 
         /// <summary>
@@ -83,7 +90,6 @@ namespace Remora.Discord.Samples.Caching.Commands
                 connectTo.ID,
                 false,
                 false,
-                OpusApplicationDefinition.Audio,
                 CancellationToken
             ).ConfigureAwait(false);
 
@@ -96,20 +102,26 @@ namespace Remora.Discord.Samples.Caching.Commands
                 );
             }
 
-            /* Process? ffmpeg = Process.Start
-            (
-                new ProcessStartInfo
-                {
-                    FileName = "ffmpeg",
-                    Arguments = "-i sample.m4a -ac 2 -f s16le -ar 48000 pipe:1",
-                    RedirectStandardOutput = true,
-                    UseShellExecute = false
-                }
-            );
-            ffmpeg!.BeginOutputReadLine(); */
             await using FileStream fs = new("output", FileMode.Open);
 
-            Result transmitResult = await client.TransmitAudioAsync(fs, CancellationToken);
+            IAudioTranscoderService transcoder = _services.GetRequiredService<IAudioTranscoderService>();
+            Result initialiseTranscoder = transcoder.Initialize();
+            if (!initialiseTranscoder.IsSuccess)
+            {
+                return await _feedbackService.SendContextualErrorAsync
+                (
+                    $"Failed to initialize the transcoder: {initialiseTranscoder.Error}",
+                    ct: CancellationToken
+                );
+            }
+
+            Result transmitResult = await client.TransmitAudioAsync
+            (
+                fs,
+                transcoder,
+                CancellationToken
+            );
+
             if (!transmitResult.IsSuccess)
             {
                 return await _feedbackService.SendContextualErrorAsync
@@ -119,7 +131,6 @@ namespace Remora.Discord.Samples.Caching.Commands
                 );
             }
 
-            // await ffmpeg.WaitForExitAsync(CancellationToken);
             return await _feedbackService.SendContextualSuccessAsync("Done!", ct: CancellationToken);
         }
 

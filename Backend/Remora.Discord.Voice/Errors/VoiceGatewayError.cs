@@ -21,7 +21,7 @@
 //
 
 using JetBrains.Annotations;
-using Remora.Discord.Gateway.Results;
+using Remora.Results;
 
 namespace Remora.Discord.Voice.Errors
 {
@@ -32,5 +32,5 @@ namespace Remora.Discord.Voice.Errors
     /// <param name="IsCritical">Indicates if the error is critical.</param>
     [PublicAPI]
     public record VoiceGatewayError(string Message, bool IsCritical)
-        : GatewayError(Message, IsCritical);
+        : ResultError(Message);
 }

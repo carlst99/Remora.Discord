@@ -5,11 +5,11 @@
     </PropertyGroup>
 
     <PropertyGroup>
-        <Version>4.0.15</Version>
+        <Version>0.0.1-alpha.1</Version>
         <Description>
             $(BaseDescription)
 
-            This package provides a fully-featured implementation of a Discord voice gateway client.
+            This package provides an implementation of a Discord voice gateway client. Only sending voice data is supported at the moment.
         </Description>
         <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
     </PropertyGroup>
@@ -17,7 +17,6 @@
     <ItemGroup>
       <PackageReference Include="libsodium" Version="1.0.18.1" />
       <PackageReference Include="Microsoft.IO.RecyclableMemoryStream" Version="2.2.0" />
-      <PackageReference Include="System.IO.Pipelines" Version="5.0.1" />
     </ItemGroup>
 
     <ItemGroup>

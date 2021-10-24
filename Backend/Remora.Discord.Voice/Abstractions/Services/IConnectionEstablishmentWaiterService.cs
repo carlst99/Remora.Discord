@@ -56,7 +56,7 @@ namespace Remora.Discord.Voice.Abstractions.Services
         /// <param name="voiceStateUpdate">The voice state udpate event.</param>
         /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
-        Task<Result> SubmitVoiceStateUpdate
+        Task<Result> SubmitVoiceStateUpdateAsync
         (
             IVoiceStateUpdate voiceStateUpdate,
             CancellationToken ct = default

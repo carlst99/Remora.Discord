@@ -155,22 +155,5 @@ namespace Remora.Discord.Samples.Caching.Commands
 
             return await _feedbackService.SendContextualSuccessAsync("Disconnected!", ct: CancellationToken);
         }
-
-        /// <summary>
-        /// Gets the version of the underlying sodium library.
-        /// </summary>
-        /// <returns>A result representing the outcome of the operation.</returns>
-        [Command("sodium-info")]
-        public async Task<IResult> SodiumInfoCommandAsync()
-        {
-            return await _feedbackService.SendContextualInfoAsync
-            (
-                $"Version: {Sodium.Version ?? "Unknown"}" +
-                $"\nNonce Size: {Sodium.NonceSize}" +
-                $"\nMAC Size: {Sodium.MacSize}" +
-                $"\nKey Size: {Sodium.KeySize}",
-                ct: CancellationToken
-            );
-        }
     }
 }

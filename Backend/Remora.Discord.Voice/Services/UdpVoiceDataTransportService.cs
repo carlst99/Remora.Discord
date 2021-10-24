@@ -36,7 +36,6 @@ using Remora.Discord.Voice.Abstractions.Objects.Events.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Services;
 using Remora.Discord.Voice.Errors;
 using Remora.Discord.Voice.Interop;
-using Remora.Discord.Voice.Interop.Opus;
 using Remora.Discord.Voice.Objects.UdpDataProtocol;
 using Remora.Discord.Voice.Util;
 using Remora.Results;
@@ -54,9 +53,9 @@ namespace Remora.Discord.Voice.Services
     {
         private static readonly IReadOnlyDictionary<string, SupportedEncryptionMode> SupportedEncryptionModes;
 
-        private readonly UdpClient _client;
         private readonly DiscordVoiceClientOptions _options;
 
+        private UdpClient _client;
         private Sodium? _encryptor;
         private SupportedEncryptionMode _encryptionMode;
         private uint _ssrc;
@@ -188,6 +187,9 @@ namespace Remora.Discord.Voice.Services
         /// <inheritdoc />
         public Result Disconnect()
         {
+            _client.Close();
+            _client = new UdpClient();
+
             _ssrc = 0;
             _encryptor = null;
             IsConnected = false;

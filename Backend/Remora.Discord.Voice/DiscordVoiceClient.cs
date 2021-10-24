@@ -233,6 +233,10 @@ namespace Remora.Discord.Voice
             {
                 return ex;
             }
+            finally
+            {
+                ConnectionStatus = GatewayConnectionStatus.Offline;
+            }
         }
 
         /// <summary>
@@ -301,7 +305,7 @@ namespace Remora.Discord.Voice
                     )
                 );
 
-                while (!ct.IsCancellationRequested && !_disconnectRequestedSource.IsCancellationRequested)
+                while (!ct.IsCancellationRequested)
                 {
                     int read = await audioStream.ReadAsync
                     (
@@ -342,6 +346,13 @@ namespace Remora.Discord.Voice
                     }
 
                     synchronizerTicks += synchronizerResolution * durationModifier;
+
+                    // We check for a client stoppage immediately before sending to minimise the chance of
+                    // the data service being stopped during the synchroniser wait
+                    if (_disconnectRequestedSource.IsCancellationRequested)
+                    {
+                        break;
+                    }
 
                     Result sendFrameResult = await _dataService.SendFrameAsync
                     (
@@ -408,9 +419,6 @@ namespace Remora.Discord.Voice
         /// <summary>
         /// Restores the client to a near pre-startup state, intended for when the client is stopping or has encountered a fatal error.
         /// </summary>
-        /// <remarks>
-        /// The payload queues are not cleared by this operation.
-        /// </remarks>
         /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
         private async Task CleanupAsync()
         {
@@ -424,9 +432,21 @@ namespace Remora.Discord.Voice
             _receiveTask.Dispose();
             _runLoopTask.Dispose();
 
+            if (_transportService.IsConnected)
+            {
+                await _transportService.DisconnectAsync(false).ConfigureAwait(false);
+            }
+
+            if (_dataService.IsConnected)
+            {
+                _dataService.Disconnect();
+            }
+
             _disconnectRequestedSource.Dispose();
             _disconnectRequestedSource = new CancellationTokenSource();
 
+            _payloadsToSend.Clear();
+            _receivedPayloads.Clear();
             _connectionRequestParameters = null;
             _gatewayConnectionDetails = null;
             _voiceServerConnectionDetails = null;
@@ -491,30 +511,43 @@ namespace Remora.Discord.Voice
                     }
                 }
 
-                throw new TaskCanceledException();
-            }
-            catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
-            {
-                Result disconnectResult = await _transportService.DisconnectAsync(false, ct).ConfigureAwait(false);
-                if (!disconnectResult.IsSuccess)
-                {
-                    return disconnectResult;
-                }
-
-                return Result.FromSuccess();
+                return await BeforeReturn().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
+                Result retResult = await BeforeReturn().ConfigureAwait(false);
+
+                if (ex is TaskCanceledException or OperationCanceledException)
+                {
+                    return retResult;
+                }
+
                 return ex;
             }
             finally
             {
-                await _transportService.DisconnectAsync(false, ct).ConfigureAwait(false);
-
                 if (_connectionRequestParameters is not null)
                 {
                     SendDisconnectVoiceStateUpdate(_connectionRequestParameters.GuildID);
                 }
+            }
+
+            async Task<Result> BeforeReturn()
+            {
+                Result transportDisconnectResult = await _transportService.DisconnectAsync(false, ct).ConfigureAwait(false);
+                Result dataDisconnectResult = _dataService.Disconnect();
+
+                if (!transportDisconnectResult.IsSuccess)
+                {
+                    return transportDisconnectResult;
+                }
+
+                if (!dataDisconnectResult.IsSuccess)
+                {
+                    return dataDisconnectResult;
+                }
+
+                return Result.FromSuccess();
             }
         }
 

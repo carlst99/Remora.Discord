@@ -74,7 +74,7 @@ namespace Remora.Discord.Voice.Services
         }
 
         /// <inheritdoc />
-        public async Task<Result> SubmitVoiceStateUpdate(IVoiceStateUpdate voiceStateUpdate, CancellationToken ct = default)
+        public async Task<Result> SubmitVoiceStateUpdateAsync(IVoiceStateUpdate voiceStateUpdate, CancellationToken ct = default)
         {
             if (!voiceStateUpdate.GuildID.IsDefined() || !_pendingRequests.Contains(voiceStateUpdate.GuildID.Value))
             {
@@ -91,6 +91,12 @@ namespace Remora.Discord.Voice.Services
             if (getCurrentUser.Entity.ID != voiceStateUpdate.UserID)
             {
                 // This is fine - the state update wasn't in response to a voice connection request.
+                return Result.FromSuccess();
+            }
+
+            if (voiceStateUpdate.ChannelID is null)
+            {
+                // This is fine - we're disconnecting from a previous session.
                 return Result.FromSuccess();
             }
 
@@ -122,7 +128,7 @@ namespace Remora.Discord.Voice.Services
                     return new VoiceRequestTimeoutError();
                 }
 
-                await Task.Delay(100, ct).ConfigureAwait(false);
+                await Task.Delay(10, ct).ConfigureAwait(false);
 
                 if (!_stateUpdates.ContainsKey(guildID) || !_serverUpdates.ContainsKey(guildID))
                 {

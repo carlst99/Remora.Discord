@@ -5,7 +5,7 @@
     </PropertyGroup>
 
     <PropertyGroup>
-        <Version>11.0.3</Version>
+        <Version>11.0.4</Version>
         <Description>
             $(BaseDescription)
 
@@ -13,7 +13,6 @@
         </Description>
         <PackageReleaseNotes>
             Update dependencies.
-            Add FeedbackMessageOptions and implement support in FeedbackService
         </PackageReleaseNotes>
     </PropertyGroup>
 
@@ -22,7 +21,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Remora.Commands" Version="7.1.1" />
+        <PackageReference Include="Remora.Commands" Version="7.1.2" />
         <PackageReference Include="Remora.Extensions.Options.Immutable" Version="1.0.1" />
     </ItemGroup>
 

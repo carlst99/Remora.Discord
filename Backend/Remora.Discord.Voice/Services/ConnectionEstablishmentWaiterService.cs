@@ -125,6 +125,10 @@ namespace Remora.Discord.Voice.Services
             {
                 if (requestWaitBeganAt.AddMilliseconds(timeoutMilliseconds) < DateTimeOffset.UtcNow)
                 {
+                    _stateUpdates.TryRemove(guildID, out _);
+                    _serverUpdates.TryRemove(guildID, out _);
+                    _pendingRequests.Remove(guildID);
+
                     return new VoiceRequestTimeoutError();
                 }
 

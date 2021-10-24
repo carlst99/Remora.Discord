@@ -22,6 +22,7 @@
 
 using System;
 using System.Buffers;
+using System.Diagnostics;
 using System.IO;
 using System.Net.WebSockets;
 using System.Text;
@@ -229,11 +230,12 @@ namespace Remora.Discord.Voice.Services
 
                 ms.Seek(0, SeekOrigin.Begin);
 
-                // For debugging purposes only
+#if DEBUG
                 IMemoryOwner<byte> tempBuffer = MemoryPool<byte>.Shared.Rent((int)ms.Length);
-                await ms.ReadAsync(tempBuffer.Memory, ct).ConfigureAwait(false);
-                Console.WriteLine(Encoding.UTF8.GetString(tempBuffer.Memory.Span));
+                await ms.ReadAsync(tempBuffer.Memory[0.. (int)ms.Length], ct).ConfigureAwait(false);
+                Debug.WriteLine(Encoding.UTF8.GetString(tempBuffer.Memory.Span[0.. (int)ms.Length]));
                 ms.Seek(0, SeekOrigin.Begin);
+#endif
 
                 var payload = await JsonSerializer.DeserializeAsync<IVoicePayload>(ms, _jsonOptions, ct).ConfigureAwait(false);
                 if (payload is null)

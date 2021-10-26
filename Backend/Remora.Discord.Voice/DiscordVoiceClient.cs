@@ -93,6 +93,11 @@ namespace Remora.Discord.Voice
         private IVoiceReady? _voiceServerConnectionDetails;
 
         /// <summary>
+        /// Gets a value indicating whether or not the client is running.
+        /// </summary>
+        public bool IsRunning { get; private set; }
+
+        /// <summary>
         /// Gets the connection status of the voice gateway.
         /// </summary>
         public GatewayConnectionStatus ConnectionStatus { get; private set; }
@@ -272,7 +277,8 @@ namespace Remora.Discord.Voice
             Stream audioStream,
             SpeakingFlags speakingFlags = SpeakingFlags.Microphone,
             IAudioTranscoderService? transcoder = null,
-            CancellationToken ct = default)
+            CancellationToken ct = default
+        )
         {
             if (ConnectionStatus is not GatewayConnectionStatus.Connected || !_dataService.IsConnected)
             {
@@ -485,6 +491,7 @@ namespace Remora.Discord.Voice
             CancellationToken ct
         )
         {
+            IsRunning = true;
             await Task.Yield();
 
             try
@@ -549,6 +556,8 @@ namespace Remora.Discord.Voice
                 {
                     SendDisconnectVoiceStateUpdate(_connectionRequestParameters.GuildID);
                 }
+
+                IsRunning = false;
             }
 
             async Task<Result> BeforeReturn()

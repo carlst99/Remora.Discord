@@ -180,7 +180,7 @@ namespace Remora.Discord.Voice
         {
             try
             {
-                if (ConnectionStatus is not GatewayConnectionStatus.Offline)
+                if (IsRunning)
                 {
                     return new InvalidOperationError("Already running.");
                 }
@@ -228,7 +228,7 @@ namespace Remora.Discord.Voice
         {
             try
             {
-                if (ConnectionStatus is GatewayConnectionStatus.Offline)
+                if (!IsRunning)
                 {
                     return new InvalidOperationError("Already stopped.");
                 }

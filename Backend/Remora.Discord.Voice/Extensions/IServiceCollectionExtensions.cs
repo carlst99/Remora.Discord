@@ -25,8 +25,10 @@ using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IO;
+using Remora.Discord.API.Abstractions.Gateway.Commands;
 using Remora.Discord.API.Extensions;
 using Remora.Discord.API.Json;
+using Remora.Discord.Gateway;
 using Remora.Discord.Gateway.Extensions;
 using Remora.Discord.Voice.Abstractions.Objects.Commands.ConnectingResuming;
 using Remora.Discord.Voice.Abstractions.Objects.Commands.Heartbeats;
@@ -93,6 +95,11 @@ namespace Remora.Discord.Voice.Extensions
                             .AddVoiceGatewayEventConverters();
                     }
                 );
+
+            serviceCollection.Configure<DiscordGatewayClientOptions>
+            (
+                o => o.Intents |= GatewayIntents.GuildVoiceStates
+            );
 
             return serviceCollection;
         }

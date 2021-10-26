@@ -73,13 +73,6 @@ namespace Remora.Discord.Samples.Voice
             (
                 (_, services) =>
                 {
-                    services.Configure<DiscordGatewayClientOptions>(
-                        o =>
-                        {
-                            o.Intents |= GatewayIntents.GuildMessages
-                                | GatewayIntents.GuildVoiceStates;
-                        });
-
                     services.AddDiscordCommands();
                     services.AddDiscordVoice();
 

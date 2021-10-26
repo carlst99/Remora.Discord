@@ -118,8 +118,7 @@ namespace Remora.Discord.Samples.Caching.Commands
             Result transmitResult = await client.TransmitAudioAsync
             (
                 fs,
-                transcoder,
-                CancellationToken
+                ct: CancellationToken
             );
 
             if (!transmitResult.IsSuccess)

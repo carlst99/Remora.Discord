@@ -71,6 +71,8 @@ namespace Remora.Discord.Voice.Extensions
             serviceCollection.TryAddSingleton<RecyclableMemoryStreamManager>();
             serviceCollection.TryAddSingleton<IConnectionEstablishmentWaiterService, ConnectionEstablishmentWaiterService>();
             serviceCollection.TryAddTransient<IVoicePayloadTransportService, WebSocketVoicePayloadTransportService>();
+
+            serviceCollection.TryAddTransient<DiscordVoiceClient>();
             serviceCollection.TryAddSingleton<DiscordVoiceClientFactory>();
 
             serviceCollection.TryAddTransient<IAudioTranscoderService, Pcm16AudioTranscoderService>();

@@ -66,6 +66,7 @@ namespace Remora.Discord.Voice
         private readonly Random _random;
         private readonly HeartbeatData _heartbeatData;
         private readonly SemaphoreSlim _transmitSemaphore;
+        private readonly IAudioTranscoderService _defaultTranscoder;
         private readonly IMemoryOwner<byte> _silenceFrameBuffer;
 
         /// <summary>
@@ -105,6 +106,7 @@ namespace Remora.Discord.Voice
         /// <param name="connectionWaiterService">The connection waiter service.</param>
         /// <param name="transportService">The voice payload transport service.</param>
         /// <param name="dataService">The voice data transport service.</param>
+        /// <param name="defaultTranscoder">The default audio transcoder to use.</param>
         /// <param name="random">A random number generator.</param>
         public DiscordVoiceClient
         (
@@ -114,6 +116,7 @@ namespace Remora.Discord.Voice
             IConnectionEstablishmentWaiterService connectionWaiterService,
             IVoicePayloadTransportService transportService,
             IVoiceDataTranportService dataService,
+            IAudioTranscoderService defaultTranscoder,
             Random random
         )
         {
@@ -135,6 +138,7 @@ namespace Remora.Discord.Voice
             _receiveTask = Task.FromResult(Result.FromSuccess());
 
             _transmitSemaphore = new SemaphoreSlim(1, 1);
+            _defaultTranscoder = defaultTranscoder;
 
             _silenceFrameBuffer = MemoryPool<byte>.Shared.Rent(3);
             _silenceFrameBuffer.Memory.Span[0] = 0xF8;
@@ -174,6 +178,11 @@ namespace Remora.Discord.Voice
                 if (ConnectionStatus is not GatewayConnectionStatus.Offline)
                 {
                     return new InvalidOperationError("Already running.");
+                }
+
+                if (!_defaultTranscoder.IsInitialized)
+                {
+                    _defaultTranscoder.Initialize();
                 }
 
                 _connectionRequestParameters = new UpdateVoiceState
@@ -254,18 +263,31 @@ namespace Remora.Discord.Voice
         /// Transmits audio.
         /// </summary>
         /// <param name="audioStream">The audio data to send.</param>
+        /// <param name="speakingFlags">The speaking flags to use.</param>
         /// <param name="transcoder">The audio transcoder to use.</param>
         /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
         /// <returns>A result representing the outcome of the operation.</returns>
         public async Task<Result> TransmitAudioAsync
         (
             Stream audioStream,
-            IAudioTranscoderService transcoder,
+            SpeakingFlags speakingFlags = SpeakingFlags.Microphone,
+            IAudioTranscoderService? transcoder = null,
             CancellationToken ct = default)
         {
             if (ConnectionStatus is not GatewayConnectionStatus.Connected || !_dataService.IsConnected)
             {
                 return new InvalidOperationError("Gateway is not connected.");
+            }
+
+            if (speakingFlags is not SpeakingFlags.Microphone or SpeakingFlags.Priority)
+            {
+                return new InvalidOperationError($"Speaking flags must not be set to {nameof(SpeakingFlags.Microphone)} or {nameof(SpeakingFlags.Priority)}.");
+            }
+
+            if (transcoder is null)
+            {
+                transcoder = _defaultTranscoder;
+                await transcoder.ResetAsync(ct).ConfigureAwait(false);
             }
 
             if (!transcoder.IsInitialized)
@@ -299,7 +321,7 @@ namespace Remora.Discord.Voice
                 (
                     new VoiceSpeakingCommand
                     (
-                        SpeakingFlags.Microphone,
+                        speakingFlags,
                         0,
                         ssrc
                     )
@@ -367,13 +389,10 @@ namespace Remora.Discord.Voice
                     }
                 }
 
-                for (int i = 0; i < 5 && !ct.IsCancellationRequested && !_disconnectRequestedSource.IsCancellationRequested; i++)
+                Result sendSilence = SendSilenceFrames(sampleSize, ct);
+                if (!sendSilence.IsSuccess)
                 {
-                    Result sendFrameResult = _dataService.SendFrame(_silenceFrameBuffer.Memory.Span[..3], sampleSize);
-                    if (!sendFrameResult.IsSuccess)
-                    {
-                        return sendFrameResult;
-                    }
+                    return sendSilence;
                 }
 
                 return Result.FromSuccess();
@@ -645,6 +664,7 @@ namespace Remora.Discord.Voice
 
                 _receivedPayloads.Enqueue(sessionDescription);
                 _dataService.Initialize(sessionDescription.Data.SecretKey);
+                SendSilenceFrames(_defaultTranscoder.SampleSize, ct); // Can be the key to enabling voice receiving in some cases
 
                 break;
             }
@@ -1192,6 +1212,26 @@ namespace Remora.Discord.Voice
                     false
                 )
             );
+        }
+
+        /// <summary>
+        /// Sends five audio frames of silence to help with interpolation.
+        /// </summary>
+        /// <param name="sampleSize">The size of a normal audio sample for the transmission.</param>
+        /// <param name="ct">A <see cref="CancellationToken"/> that can be used to stop the operation.</param>
+        /// <returns>A result representing the outcome of the operation.</returns>
+        private Result SendSilenceFrames(int sampleSize, CancellationToken ct = default)
+        {
+            for (int i = 0; i < 5 && !ct.IsCancellationRequested && !_disconnectRequestedSource.IsCancellationRequested; i++)
+            {
+                Result sendFrameResult = _dataService.SendFrame(_silenceFrameBuffer.Memory.Span[..3], sampleSize);
+                if (!sendFrameResult.IsSuccess)
+                {
+                    return sendFrameResult;
+                }
+            }
+
+            return Result.FromSuccess();
         }
     }
 }

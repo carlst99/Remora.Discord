@@ -33,8 +33,6 @@ using Remora.Discord.Commands.Contexts;
 using Remora.Discord.Commands.Feedback.Services;
 using Remora.Discord.Voice;
 using Remora.Discord.Voice.Abstractions.Services;
-using Remora.Discord.Voice.Interop;
-using Remora.Discord.Voice.Interop.Opus;
 using Remora.Results;
 
 namespace Remora.Discord.Samples.Caching.Commands

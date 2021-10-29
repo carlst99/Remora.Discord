@@ -25,6 +25,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using JetBrains.Annotations;
 using Remora.Discord.API.Abstractions.Gateway.Events;
 using Remora.Discord.API.Abstractions.Objects;
 using Remora.Discord.API.Abstractions.Rest;
@@ -37,7 +38,8 @@ using Remora.Results;
 namespace Remora.Discord.Voice.Services
 {
     /// <inheritdoc cref="IConnectionEstablishmentWaiterService"/>
-    internal sealed class ConnectionEstablishmentWaiterService : IConnectionEstablishmentWaiterService
+    [PublicAPI]
+    public class ConnectionEstablishmentWaiterService : IConnectionEstablishmentWaiterService
     {
         private readonly IDiscordRestUserAPI _userAPI;
         private readonly HashSet<Snowflake> _pendingRequests;

@@ -22,6 +22,7 @@
 
 using System.Threading;
 using System.Threading.Tasks;
+using JetBrains.Annotations;
 using Remora.Discord.API.Abstractions.Gateway.Events;
 using Remora.Discord.Gateway.Responders;
 using Remora.Discord.Voice.Abstractions.Services;
@@ -32,7 +33,8 @@ namespace Remora.Discord.Voice.Responders
     /// <summary>
     /// Contains logic for responding to <see cref="IVoiceServerUpdate"/> gateway events.
     /// </summary>
-    internal sealed class VoiceServerUpdateResponder : IResponder<IVoiceServerUpdate>
+    [PublicAPI]
+    public class VoiceServerUpdateResponder : IResponder<IVoiceServerUpdate>
     {
         private readonly IConnectionEstablishmentWaiterService _connectionService;
 

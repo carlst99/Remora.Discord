@@ -592,6 +592,9 @@ namespace Remora.Discord.API.Extensions
             options.AddDataObjectConverter<IAttachment, Attachment>()
                 .WithPropertyName(a => a.IsEphemeral, "ephemeral");
 
+            options.AddDataObjectConverter<IPartialAttachment, PartialAttachment>()
+                .WithPropertyName(a => a.IsEphemeral, "ephemeral");
+
             options.AddDataObjectConverter<IEmbed, Embed>()
                 .WithPropertyConverter(e => e.Type, new StringEnumConverter<EmbedType>(new SnakeCaseNamingPolicy()))
                 .WithPropertyConverter(e => e.Colour, new ColorConverter())
@@ -823,7 +826,8 @@ namespace Remora.Discord.API.Extensions
             options.AddDataObjectConverter
             <
                 IApplicationCommandInteractionDataOption, ApplicationCommandInteractionDataOption
-            >();
+            >()
+                .WithPropertyName(o => o.IsFocused, "focused");
 
             options.AddDataObjectConverter<IInteraction, Interaction>();
             options.AddDataObjectConverter
@@ -837,7 +841,8 @@ namespace Remora.Discord.API.Extensions
             options.AddDataObjectConverter<IApplicationCommand, ApplicationCommand>();
             options.AddDataObjectConverter<IApplicationCommandOption, ApplicationCommandOption>()
                 .WithPropertyName(o => o.IsDefault, "default")
-                .WithPropertyName(o => o.IsRequired, "required");
+                .WithPropertyName(o => o.IsRequired, "required")
+                .WithPropertyName(o => o.EnableAutocomplete, "autocomplete");
             options.AddDataObjectConverter<IApplicationCommandOptionChoice, ApplicationCommandOptionChoice>();
             options.AddDataObjectConverter<IMessageInteraction, MessageInteraction>();
 

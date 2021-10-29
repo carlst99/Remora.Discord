@@ -38,6 +38,8 @@ namespace Remora.Discord.API.Objects
         Optional<IReadOnlyList<IEmbed>> Embeds = default,
         Optional<IAllowedMentions> AllowedMentions = default,
         Optional<InteractionCallbackDataFlags> Flags = default,
-        Optional<IReadOnlyList<IMessageComponent>> Components = default
+        Optional<IReadOnlyList<IMessageComponent>> Components = default,
+        Optional<IReadOnlyList<IPartialAttachment>> Attachments = default,
+        Optional<IReadOnlyList<IApplicationCommandOptionChoice>> Choices = default
     ) : IInteractionCallbackData;
 }

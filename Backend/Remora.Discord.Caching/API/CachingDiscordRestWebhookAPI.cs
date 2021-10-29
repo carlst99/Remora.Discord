@@ -27,6 +27,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using JetBrains.Annotations;
 using Microsoft.Extensions.Options;
+using OneOf;
 using Remora.Discord.API.Abstractions.Objects;
 using Remora.Discord.Caching.Services;
 using Remora.Discord.Core;
@@ -106,11 +107,11 @@ namespace Remora.Discord.Caching.API
             Optional<string> username = default,
             Optional<string> avatarUrl = default,
             Optional<bool> isTTS = default,
-            Optional<FileData> file = default,
             Optional<IReadOnlyList<IEmbed>> embeds = default,
             Optional<IAllowedMentions> allowedMentions = default,
             Optional<Snowflake> threadID = default,
             Optional<IReadOnlyList<IMessageComponent>> components = default,
+            Optional<IReadOnlyList<OneOf<FileData, IPartialAttachment>>> attachments = default,
             CancellationToken ct = default
         )
         {
@@ -123,11 +124,11 @@ namespace Remora.Discord.Caching.API
                 username,
                 avatarUrl,
                 isTTS,
-                file,
                 embeds,
                 allowedMentions,
                 threadID,
                 components,
+                attachments,
                 ct
             );
 
@@ -337,9 +338,9 @@ namespace Remora.Discord.Caching.API
             Optional<string?> content = default,
             Optional<IReadOnlyList<IEmbed>?> embeds = default,
             Optional<IAllowedMentions?> allowedMentions = default,
-            Optional<FileData?> file = default,
-            Optional<IReadOnlyList<IAttachment>> attachments = default,
             Optional<IReadOnlyList<IMessageComponent>> components = default,
+            Optional<IReadOnlyList<OneOf<FileData, IPartialAttachment>>> attachments = default,
+            Optional<Snowflake> threadID = default,
             CancellationToken ct = default
         )
         {
@@ -351,9 +352,9 @@ namespace Remora.Discord.Caching.API
                 content,
                 embeds,
                 allowedMentions,
-                file,
-                attachments,
                 components,
+                attachments,
+                threadID,
                 ct
             );
 
@@ -374,10 +375,11 @@ namespace Remora.Discord.Caching.API
             Snowflake webhookID,
             string token,
             Snowflake messageID,
+            Optional<Snowflake> threadID = default,
             CancellationToken ct = default
         )
         {
-            var result = await base.DeleteWebhookMessageAsync(webhookID, token, messageID, ct);
+            var result = await base.DeleteWebhookMessageAsync(webhookID, token, messageID, threadID, ct);
             if (!result.IsSuccess)
             {
                 return result;
@@ -395,6 +397,7 @@ namespace Remora.Discord.Caching.API
             Snowflake webhookID,
             string webhookToken,
             Snowflake messageID,
+            Optional<Snowflake> threadID = default,
             CancellationToken ct = default
         )
         {
@@ -404,7 +407,7 @@ namespace Remora.Discord.Caching.API
                 return Result<IMessage>.FromSuccess(cachedInstance);
             }
 
-            var result = await base.GetWebhookMessageAsync(webhookID, webhookToken, messageID, ct);
+            var result = await base.GetWebhookMessageAsync(webhookID, webhookToken, messageID, threadID, ct);
             if (!result.IsSuccess)
             {
                 return result;

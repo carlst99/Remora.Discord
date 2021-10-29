@@ -1,5 +1,5 @@
 //
-//  ApplicationCommandOption.cs
+//  PartialAttachment.cs
 //
 //  Author:
 //       Jarl Gullberg <jarl.gullberg@gmail.com>
@@ -20,7 +20,6 @@
 //  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
-using System.Collections.Generic;
 using JetBrains.Annotations;
 using Remora.Discord.API.Abstractions.Objects;
 using Remora.Discord.Core;
@@ -29,19 +28,19 @@ using Remora.Discord.Core;
 
 namespace Remora.Discord.API.Objects
 {
-    /// <inheritdoc cref="IApplicationCommandOption" />
+    /// <inheritdoc cref="IPartialAttachment" />
     [PublicAPI]
-    public record ApplicationCommandOption
+    public record PartialAttachment
     (
-        ApplicationCommandOptionType Type,
-        string Name,
-        string Description,
-        Optional<bool> IsDefault = default,
-        Optional<bool> IsRequired = default,
-        Optional<IReadOnlyList<IApplicationCommandOptionChoice>> Choices = default,
-        Optional<bool> EnableAutocomplete = default,
-        Optional<IReadOnlyList<IApplicationCommandOption>> Options = default,
-        Optional<IReadOnlyList<ChannelType>> ChannelTypes = default
-    )
-    : IApplicationCommandOption;
+        Optional<Snowflake> ID = default,
+        Optional<string> Filename = default,
+        Optional<string> Description = default,
+        Optional<string> ContentType = default,
+        Optional<int> Size = default,
+        Optional<string> Url = default,
+        Optional<string> ProxyUrl = default,
+        Optional<int?> Height = default,
+        Optional<int?> Width = default,
+        Optional<bool> IsEphemeral = default
+    ) : IPartialAttachment;
 }

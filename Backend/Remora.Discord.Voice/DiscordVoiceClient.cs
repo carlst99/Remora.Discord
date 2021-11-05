@@ -98,6 +98,11 @@ namespace Remora.Discord.Voice
         public bool IsRunning { get; private set; }
 
         /// <summary>
+        /// Gets a value indicating whether or not the client is transmitting.
+        /// </summary>
+        public bool IsTransmitting => _transmitSemaphore.CurrentCount == 0;
+
+        /// <summary>
         /// Gets the connection status of the voice gateway.
         /// </summary>
         public GatewayConnectionStatus ConnectionStatus { get; private set; }

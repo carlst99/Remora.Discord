@@ -24,7 +24,6 @@ using JetBrains.Annotations;
 
 namespace Remora.Discord.Voice.Interop.Opus
 {
-#pragma warning disable RCS1154 // Sort enum members.
     /// <summary>
     /// Enumerates error codes for the reference libopus implementation.
     /// </summary>
@@ -32,34 +31,9 @@ namespace Remora.Discord.Voice.Interop.Opus
     public enum OpusErrorDefinition
     {
         /// <summary>
-        /// No error.
+        /// Memory allocation has failed.
         /// </summary>
-        OK = 0,
-
-        /// <summary>
-        /// One or more invalid/out of range arguments.
-        /// </summary>
-        BadArgument = -1,
-
-        /// <summary>
-        /// Not enough bytes allocated in the buffer.
-        /// </summary>
-        BufferTooSmall = -2,
-
-        /// <summary>
-        /// An internal error was detected.
-        /// </summary>
-        InternalError = -3,
-
-        /// <summary>
-        /// The compressed data passed is corrupted.
-        /// </summary>
-        InvalidPacket = -4,
-
-        /// <summary>
-        /// Invalid/unsupported request number.
-        /// </summary>
-        Unimplemented = -5,
+        AllocationFail = -7,
 
         /// <summary>
         /// An encoder or decoder state is invalid or already freed.
@@ -67,9 +41,33 @@ namespace Remora.Discord.Voice.Interop.Opus
         InvalidState = -6,
 
         /// <summary>
-        /// Memory allocation has failed.
+        /// Invalid/unsupported request number.
         /// </summary>
-        AllocationFail = -7
+        Unimplemented = -5,
+
+        /// <summary>
+        /// The compressed data passed is corrupted.
+        /// </summary>
+        InvalidPacket = -4,
+
+        /// <summary>
+        /// An internal error was detected.
+        /// </summary>
+        InternalError = -3,
+
+        /// <summary>
+        /// Not enough bytes allocated in the buffer.
+        /// </summary>
+        BufferTooSmall = -2,
+
+        /// <summary>
+        /// One or more invalid/out of range arguments.
+        /// </summary>
+        BadArgument = -1,
+
+        /// <summary>
+        /// No error.
+        /// </summary>
+        OK = 0
     }
-#pragma warning restore RCS1154 // Sort enum members.
 }

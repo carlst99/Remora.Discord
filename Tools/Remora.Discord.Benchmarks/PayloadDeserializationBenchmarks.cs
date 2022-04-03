@@ -27,9 +27,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Pipelines;
 using System.Text.Json;
-using System.Threading;
 using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using Microsoft.IO;
@@ -44,8 +42,6 @@ namespace Remora.Discord.Benchmarks
         private static readonly RecyclableMemoryStreamManager _memoryStreamManager = new();
 
         private readonly List<ReadOnlyMemory<byte>> _dataBlocks;
-        private readonly SemaphoreSlim _payloadReceiveSemaphore;
-        private readonly Pipe _receivePipe;
 
         public PayloadDeserializationBenchmarks()
         {
@@ -69,9 +65,6 @@ namespace Remora.Discord.Benchmarks
 
                 start += MaxPayloadSize;
             }
-
-            _payloadReceiveSemaphore = new SemaphoreSlim(1, 1);
-            _receivePipe = new Pipe(new PipeOptions(minimumSegmentSize: MaxPayloadSize));
         }
 
         [Benchmark(Baseline = true)]
@@ -91,27 +84,6 @@ namespace Remora.Discord.Benchmarks
 
             var payload = await JsonSerializer.DeserializeAsync<Payload>(memoryStream);
             ArrayPool<byte>.Shared.Return(buffer);
-
-            return payload;
-        }
-
-        [Benchmark]
-        public async Task<Payload?> CurrentWithMemoryPool()
-        {
-            await using var memoryStream = new MemoryStream();
-
-            var buffer = MemoryPool<byte>.Shared.Rent(MaxPayloadSize);
-
-            for (int i = 0; i < _dataBlocks.Count; i++)
-            {
-                _dataBlocks[i].CopyTo(buffer.Memory);
-                await memoryStream.WriteAsync(buffer.Memory[.._dataBlocks[i].Length]);
-            }
-
-            memoryStream.Seek(0, SeekOrigin.Begin);
-
-            var payload = await JsonSerializer.DeserializeAsync<Payload>(memoryStream);
-            buffer.Dispose();
 
             return payload;
         }
@@ -138,31 +110,9 @@ namespace Remora.Discord.Benchmarks
         }
 
         [Benchmark]
-        public async Task<Payload?> CurrentWithBothAndConfigureAwait()
-        {
-            await using var memoryStream = _memoryStreamManager.GetStream();
-
-            var buffer = MemoryPool<byte>.Shared.Rent(MaxPayloadSize);
-
-            for (int i = 0; i < _dataBlocks.Count; i++)
-            {
-                _dataBlocks[i].CopyTo(buffer.Memory);
-                await memoryStream.WriteAsync(buffer.Memory[.._dataBlocks[i].Length]).ConfigureAwait(false);
-            }
-
-            memoryStream.Seek(0, SeekOrigin.Begin);
-
-            var payload = await JsonSerializer.DeserializeAsync<Payload>(memoryStream).ConfigureAwait(false);
-            buffer.Dispose();
-
-            return payload;
-        }
-
-        [Benchmark]
-        public async Task<Payload?> NewWithSequences()
+        public Task<Payload?> NewWithSequences()
         {
             List<IMemoryOwner<byte>> dataMemorySegments = new();
-            await _payloadReceiveSemaphore.WaitAsync().ConfigureAwait(false);
 
             for (int i = 0; i < _dataBlocks.Count; i++)
             {
@@ -181,9 +131,8 @@ namespace Remora.Discord.Benchmarks
             }
 
             dataMemorySegments.Clear();
-            _payloadReceiveSemaphore.Release();
 
-            return p;
+            return Task.FromResult(p);
         }
 
         private static ReadOnlySequence<byte> MemoryListToSequence(IList<IMemoryOwner<byte>> memorySegments, int endIndex)

@@ -26,10 +26,11 @@
 using System;
 using System.Buffers;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
-using System.Threading;
 using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
+using Microsoft.IO;
 using Remora.Discord.Benchmarks.Data;
 
 namespace Remora.Discord.Benchmarks
@@ -37,17 +38,18 @@ namespace Remora.Discord.Benchmarks
     [MemoryDiagnoser]
     public class PayloadSerializationBenchmarks
     {
-        private readonly Payload _payload;
+        private static readonly RecyclableMemoryStreamManager _memoryStreamManager = new();
 
-        private readonly SemaphoreSlim _payloadSendSemaphore;
+        private readonly Payload _payload;
         private readonly ArrayBufferWriter<byte> _payloadSendBuffer;
         private readonly Utf8JsonWriter _payloadJsonWriter;
+
+        private long _length;
 
         public PayloadSerializationBenchmarks()
         {
             _payload = Payload.LessThan4096();
 
-            _payloadSendSemaphore = new SemaphoreSlim(1, 1);
             _payloadSendBuffer = new ArrayBufferWriter<byte>(4096);
             _payloadJsonWriter = new Utf8JsonWriter
             (
@@ -56,8 +58,14 @@ namespace Remora.Discord.Benchmarks
             );
         }
 
+        [GlobalCleanup]
+        public void After()
+        {
+            Console.WriteLine(_length);
+        }
+
         [Benchmark(Baseline = true)]
-        public async Task<ArraySegment<byte>> Old()
+        public async Task Current()
         {
             await using var memoryStream = new MemoryStream();
 
@@ -69,11 +77,10 @@ namespace Remora.Discord.Benchmarks
                 buffer = ArrayPool<byte>.Shared.Rent((int)memoryStream.Length);
                 memoryStream.Seek(0, SeekOrigin.Begin);
 
-                // Copy the data
                 var bufferSegment = new ArraySegment<byte>(buffer, 0, (int)memoryStream.Length);
                 await memoryStream.ReadAsync(bufferSegment);
 
-                return bufferSegment;
+                Send(bufferSegment.AsMemory());
             }
             finally
             {
@@ -85,24 +92,36 @@ namespace Remora.Discord.Benchmarks
         }
 
         [Benchmark]
-        public async Task<ReadOnlyMemory<byte>> New()
+        public async Task NewWithRecyclableMemoryStream()
+        {
+            await using var memoryStream = _memoryStreamManager.GetStream();
+            await JsonSerializer.SerializeAsync(memoryStream, _payload);
+
+            Send(memoryStream.GetBuffer().AsMemory(0, (int)memoryStream.Position));
+        }
+
+        [Benchmark]
+        public Task New()
         {
             JsonSerializer.Serialize(_payloadJsonWriter, _payload);
 
             ReadOnlyMemory<byte> data = _payloadSendBuffer.WrittenMemory;
+            Send(data);
 
-            bool entered = await _payloadSendSemaphore.WaitAsync(1000).ConfigureAwait(false);
-            if (!entered)
-            {
-                return data;
-            }
-
-            _payloadSendSemaphore.Release();
             _payloadSendBuffer.Clear();
             _payloadJsonWriter.Reset();
 
-            // Normally the data is already written away, so it doesn't matter that we're returning a clear memory segment in the benchmark.
-            return data;
+            return Task.CompletedTask;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void Send(ReadOnlyMemory<byte> buffer)
+        {
+            unchecked
+            {
+                // An attempt to ensure this method and buffer pass isn't trimmed
+                _length += buffer.Length;
+            }
         }
     }
 }
